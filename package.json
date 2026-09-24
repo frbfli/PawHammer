@@ -1,0 +1,13 @@
+{
+  "name": "pawhammer",
+  "version": "0.1.0",
+  "description": "Warhammer 40,000 11th edition list builder powered by BSData",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "fixtures": "node tests/fetch-fixtures.js",
+    "test": "node tests/engine.test.js"
+  },
+  "license": "MIT"
+}

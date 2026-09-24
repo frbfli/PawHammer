@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PawHammer — Warhammer 40,000 List Builder</title>
+  <meta name="description" content="Build and validate Warhammer 40,000 11th edition army lists using BSData.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23d4a54a' d='M8 1 1 4v4c0 3.9 3 6.6 7 7 4-.4 7-3.1 7-7V4L8 1z'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="css/app.css" rel="stylesheet">
+</head>
+<body>
+  <nav class="navbar navbar-expand bg-body-tertiary border-bottom sticky-top d-print-none" id="top-nav">
+    <div class="container-fluid">
+      <a class="navbar-brand brand" href="#/"><i class="bi bi-shield-shaded text-accent"></i> PawHammer</a>
+      <span class="navbar-text small text-body-secondary d-none d-md-inline" id="source-label"></span>
+      <div class="ms-auto d-flex align-items-center gap-2">
+        <button class="btn btn-sm btn-outline-secondary" id="btn-settings" title="Data source settings">
+          <i class="bi bi-database-gear"></i><span class="d-none d-sm-inline"> Data</span>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-theme" title="Toggle light/dark theme">
+          <i class="bi bi-circle-half"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <main id="app" class="d-print-none"></main>
+  <div id="print-view" class="d-none d-print-block"></div>
+
+  <!-- Settings modal -->
+  <div class="modal fade" id="settings-modal" tabindex="-1" aria-labelledby="settings-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form class="modal-content" id="settings-form">
+        <div class="modal-header">
+          <h2 class="modal-title fs-5" id="settings-title"><i class="bi bi-database-gear"></i> Data source</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-body-secondary">PawHammer reads army rules directly from a
+            <a href="https://github.com/BSData" target="_blank" rel="noopener">BSData</a> GitHub repository
+            (JSON format). Files are cached in your browser and refreshed when the repository changes.</p>
+          <div class="row g-2">
+            <div class="col-6"><label class="form-label small" for="set-owner">Owner</label>
+              <input class="form-control form-control-sm" id="set-owner" required></div>
+            <div class="col-6"><label class="form-label small" for="set-repo">Repository</label>
+              <input class="form-control form-control-sm" id="set-repo" required></div>
+            <div class="col-6"><label class="form-label small" for="set-branch">Branch</label>
+              <input class="form-control form-control-sm" id="set-branch" required></div>
+          </div>
+          <hr>
+          <label class="form-label small" for="set-local">Or use local files (a clone of the repository)</label>
+          <input class="form-control form-control-sm" type="file" id="set-local" accept=".json" multiple>
+          <div class="form-text">Select every <code>.json</code> file from the repository. Local files are used for this session only.</div>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-sm btn-outline-danger" id="btn-clear-cache"><i class="bi bi-trash"></i> Clear cached data</button>
+          <div>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-reset-source">Reset to default</button>
+            <button type="submit" class="btn btn-sm btn-primary">Save</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- New roster modal -->
+  <div class="modal fade" id="new-modal" tabindex="-1" aria-labelledby="new-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form class="modal-content" id="new-form">
+        <div class="modal-header">
+          <h2 class="modal-title fs-5" id="new-title"><i class="bi bi-plus-square"></i> New roster</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label" for="new-faction">Faction</label>
+            <select class="form-select" id="new-faction" required></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="new-name">Roster name</label>
+            <input class="form-control" id="new-name" placeholder="e.g. Szarekhan Vanguard">
+          </div>
+          <div class="mb-1">
+            <label class="form-label" for="new-size">Battle size</label>
+            <select class="form-select" id="new-size">
+              <option value="1000">Incursion — 1,000 pts</option>
+              <option value="2000" selected>Strike Force — 2,000 pts</option>
+              <option value="3000">Onslaught — 3,000 pts</option>
+              <option value="">Choose later</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-hammer"></i> Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-container position-fixed bottom-0 end-0 p-3 d-print-none" id="toasts"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
