@@ -4,9 +4,9 @@ import { html, raw, richText, Actions, fmtPts } from './html.js';
 import { store } from './store.js';
 import { toast, download, copyText } from './toast.js';
 import { VirtualSelection } from '../engine/roster.js';
+import { datasheetHtml } from './datasheet.js';
 
 const MAX_DEPTH = 4;
-const WEAPON_ICONS = { 'Ranged Weapons': 'bi-crosshair', 'Melee Weapons': 'bi-shield-slash' };
 
 export class Editor {
   /** @param {import('../engine/engine.js').RosterEngine} engine */
@@ -47,14 +47,7 @@ export class Editor {
         </div>
       </div>`);
 
-    this.actions.bind(this.root);
-    this.root.addEventListener('keydown', (ev) => {
-      const el = ev.target;
-      if ((ev.key === 'Enter' || ev.key === ' ') && el.matches('[data-act][tabindex]') && !el.matches('input,select,textarea,button')) {
-        ev.preventDefault();
-        el.click();
-      }
-    });
+    this.unbindActions = this.actions.bind(this.root);
     const search = this.root.querySelector('#add-search');
     search.addEventListener('input', () => { this.search = search.value.trim().toLowerCase(); this.renderAddList(); });
 
@@ -68,6 +61,7 @@ export class Editor {
 
   destroy() {
     if (this.unsubscribe) this.unsubscribe();
+    this.unbindActions();
     this.save();
   }
 
@@ -158,6 +152,7 @@ export class Editor {
             ? html`<button class="btn btn-sm btn-danger" aria-expanded="${this.showIssues}" data-act="${this.actions.add(() => { this.showIssues = !this.showIssues; this.renderBar(); })}">
                 <i class="bi bi-exclamation-triangle me-1"></i>${errors.length} issue${errors.length === 1 ? '' : 's'}</button>`
             : html`<span class="btn btn-sm btn-success disabled" aria-disabled="true"><i class="bi bi-check2-circle me-1"></i>Valid</span>`}
+          <a class="btn btn-sm btn-warning" href="#/play/${encodeURIComponent(r.id)}" title="View-only list for the table"><i class="bi bi-play-fill me-1"></i>Play Mode</a>
           <div class="dropdown">
             <button class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-box-arrow-up me-1"></i>Export</button>
             <ul class="dropdown-menu dropdown-menu-end">
@@ -253,7 +248,7 @@ export class Editor {
     const preview = this.engine.previewEntry(this.force, def);
     return html`<li class="list-group-item bg-dark text-light d-lg-none py-3">
       <small class="opacity-75 d-block mb-2">${preview.models ? `${preview.models} model${preview.models === 1 ? '' : 's'} • ` : ''}${fmtPts(preview.points)} pts with default wargear</small>
-      ${this.infoSheetHtml(preview.info, false) || html`<p class="opacity-75 mb-2">No datasheet information in the data.</p>`}
+      ${datasheetHtml(preview.info, { counts: true }) || html`<p class="opacity-75 mb-2">No datasheet information in the data.</p>`}
       <div class="d-grid mt-3">
         <button type="button" class="btn btn-success" data-act="${this.actions.add(() => this.addUnit(def))}"><i class="bi bi-plus-lg me-1"></i>Add to Army</button>
       </div>
@@ -321,6 +316,7 @@ export class Editor {
         <div class="me-2" style="min-width:0">
           <div class="fw-bold text-primary">${issueCount ? html`<i class="bi bi-exclamation-circle-fill text-danger me-1" title="${issueCount} issue(s)"></i>` : ''}${e.displayName(s)}</div>
           <small class="opacity-75 d-block">${this.summary(s) || (isConfig ? html`<em>Not chosen</em>` : '')}</small>
+          ${this.attachmentNote(s)}
         </div>
         <div class="d-flex align-items-center gap-1">
           ${pts ? html`<span class="badge bg-primary rounded-pill pts">${fmtPts(pts)} pts</span>` : ''}
@@ -331,6 +327,62 @@ export class Editor {
               data-act="${this.actions.add((ev) => { ev.stopPropagation(); this.removeUnit(s); })}"><i class="bi bi-trash"></i></button>`}
         </div>
       </li>`;
+  }
+
+  /** "Unit name" with a number when several units share the name, e.g. "Necron Warriors (2)". */
+  unitLabel(s) {
+    const e = this.engine;
+    const name = e.displayName(s);
+    const same = s.force.selections.filter((x) => x.def.type !== 'upgrade' && e.displayName(x) === name);
+    return same.length > 1 ? `${name} (${same.indexOf(s) + 1})` : name;
+  }
+
+  attachmentNote(s) {
+    const e = this.engine;
+    const targets = e.attachmentsOf(s).map((a) => e.findSelection(a.targetId)).filter(Boolean);
+    const leaders = e.leadersOf(s);
+    return html`
+      ${targets.length ? html`<small class="d-block text-info"><i class="bi bi-link-45deg"></i> Attached to ${targets.map((t) => this.unitLabel(t)).join(', ')}</small>` : ''}
+      ${leaders.length ? html`<small class="d-block text-info"><i class="bi bi-people-fill"></i> Led by ${leaders.map((l) => e.displayName(l)).join(', ')}</small>` : ''}`;
+  }
+
+  /** Leader/Support attachment pickers for a leader, and the list of attached characters for a unit. */
+  attachHtml(sel) {
+    const e = this.engine;
+    if (!sel.parent || !sel.parent.isForce) return '';
+    const parts = [];
+    for (const assoc of e.associationDefs(sel)) {
+      const current = e.attachedTarget(sel, assoc.id);
+      const candidates = e.attachCandidates(sel, assoc);
+      if (current && !candidates.includes(current)) candidates.unshift(current);
+      const required = Number(assoc.min) > 0;
+      parts.push(html`<div class="alert alert-dark py-2 px-3 mb-3">
+        <label class="form-label small fw-semibold text-primary mb-1" for="att-${sel.id}-${assoc.id}">
+          <i class="bi bi-link-45deg me-1"></i>Attached to <span class="opacity-75 fw-normal">(${assoc.label || assoc.name}${required ? ', required' : ''})</span>
+        </label>
+        <select class="form-select form-select-sm" id="att-${sel.id}-${assoc.id}"
+          data-act="${this.actions.add((ev) => e.attach(sel, assoc.id, e.findSelection(ev.target.value)))}">
+          <option value="">${candidates.length ? 'Not attached' : 'No eligible units in this army'}</option>
+          ${candidates.map((c) => {
+            const others = e.leadersOf(c).filter((l) => l !== sel);
+            return html`<option value="${c.id}" ${c === current ? 'selected' : ''}>${this.unitLabel(c)}${others.length ? ` — with ${others.map((l) => e.displayName(l)).join(', ')}` : ''}</option>`;
+          })}
+        </select>
+      </div>`);
+    }
+    const leaders = e.leadersOf(sel);
+    if (leaders.length) {
+      parts.push(html`<div class="alert alert-dark py-2 px-3 mb-3">
+        <div class="small fw-semibold text-primary mb-1"><i class="bi bi-people-fill me-1"></i>Attached characters</div>
+        ${leaders.map((l) => html`<div class="d-flex justify-content-between align-items-center py-1">
+          <a href="#" class="link-light" data-act="${this.actions.add(() => this.select(l))}">${e.displayName(l)}</a>
+          <button class="btn btn-sm btn-outline-light py-0" data-act="${this.actions.add(() => {
+            for (const a of e.attachmentsOf(l).filter((x) => x.targetId === sel.id)) e.attach(l, a.assocId, null);
+          })}">Detach</button>
+        </div>`)}
+      </div>`);
+    }
+    return parts;
   }
 
   removeUnit(s) {
@@ -380,6 +432,7 @@ export class Editor {
         </div>
       </div>
       ${issues.map((i) => html`<div class="alert ${i.level === 'error' ? 'alert-danger' : 'alert-warning'} py-2 px-3 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>${i.message}</div>`)}
+      ${this.attachHtml(sel)}
       ${options.length ? html`<h6 class="fw-bold text-primary mb-2"><i class="bi bi-sliders me-1"></i>Options</h6>${options}` : ''}
       ${isConfig ? '' : this.sheetHtml(sel)}`);
   }
@@ -506,81 +559,7 @@ export class Editor {
   // ------------------------------------------------------------ datasheet
 
   sheetHtml(sel) {
-    return this.infoSheetHtml(this.engine.describe(sel));
-  }
-
-  /** Datasheet markup from RosterEngine.describe() output. */
-  infoSheetHtml(d, divider = true) {
-    if (!d.profiles.length && !d.rules.length) return '';
-    const byType = new Map();
-    for (const p of d.profiles) {
-      if (!byType.has(p.typeName)) byType.set(p.typeName, []);
-      byType.get(p.typeName).push(p);
-    }
-    const sections = [];
-    const unitProfiles = byType.get('Unit') || [];
-    if (unitProfiles.length) {
-      sections.push(html`<div class="mb-4">
-        <h6 class="fw-bold text-primary mb-2"><i class="bi bi-bar-chart-fill me-1"></i>Characteristics</h6>
-        ${unitProfiles.map((p) => html`
-          ${unitProfiles.length > 1 ? html`<div class="small fw-semibold mb-1">${p.name}</div>` : ''}
-          <div class="d-flex flex-wrap gap-2 justify-content-between mb-2">
-            ${p.characteristics.map((c) => html`<div class="stat-box flex-fill"><span class="stat-label">${c.name}</span><span class="stat-value">${c.value || '-'}</span></div>`)}
-          </div>`)}
-      </div>`);
-    }
-    const abilities = [];
-    for (const [type, list] of byType) {
-      if (type === 'Unit') continue;
-      const cols = list[0].characteristics.map((c) => c.name);
-      if (cols.length <= 1) { abilities.push(...list); continue; }
-      const centered = (c) => !/keywords|description/i.test(c);
-      sections.push(html`<div class="mb-4">
-        <h6 class="fw-bold text-primary mb-2"><i class="bi ${WEAPON_ICONS[type] || 'bi-table'} me-1"></i>${type}</h6>
-        <div class="table-responsive">
-          <table class="table table-dark table-hover table-striped table-bordered weapon-table align-middle mb-0">
-            <thead><tr class="table-primary"><th scope="col">Name</th>${cols.map((c) => html`<th scope="col" class="${centered(c) ? 'text-center' : ''}">${c}</th>`)}</tr></thead>
-            <tbody>${list.map((p) => html`<tr><td class="fw-semibold">${p.name}</td>${cols.map((c) => {
-              const v = (p.characteristics.find((x) => x.name === c) || {}).value || '';
-              if (/keywords/i.test(c)) return html`<td>${this.formatKeywords(v)}</td>`;
-              return html`<td class="${centered(c) ? 'text-center' : ''}">${richText(v)}</td>`;
-            })}</tr>`)}</tbody>
-          </table>
-        </div>
-      </div>`);
-    }
-    if (abilities.length) {
-      sections.push(html`<div class="mb-4">
-        <h6 class="fw-bold text-primary mb-2"><i class="bi bi-lightning-charge me-1"></i>Abilities</h6>
-        ${abilities.map((p) => html`<div class="mb-2">
-          <span class="fw-bold"><i class="bi bi-star-fill me-1 text-warning"></i>${p.name}</span>
-          <div class="small opacity-75">${richText(p.characteristics[0] ? p.characteristics[0].value : '')}</div>
-        </div>`)}
-      </div>`);
-    }
-    if (d.rules.length) {
-      sections.push(html`<div class="mb-4">
-        <h6 class="fw-bold text-primary mb-2"><i class="bi bi-book me-1"></i>Rules</h6>
-        ${d.rules.map((r) => html`<details class="rule mb-1"><summary>${r.name}</summary><div>${r.description ? richText(r.description) : html`<em>No description in data.</em>`}</div></details>`)}
-      </div>`);
-    }
-    if (d.keywords.length) {
-      const faction = d.keywords.filter((k) => /^Faction:/i.test(k));
-      const other = d.keywords.filter((k) => !/^Faction:/i.test(k));
-      sections.push(html`<div>
-        <h6 class="fw-bold text-primary mb-2"><i class="bi bi-tags me-1"></i>Keywords</h6>
-        <div class="d-flex flex-wrap gap-2">
-          ${other.map((k) => html`<span class="badge bg-dark border text-light p-2">${k}</span>`)}
-          ${faction.map((k) => html`<span class="badge bg-primary p-2">${k.replace(/^Faction:s*/i, '')}</span>`)}
-        </div>
-      </div>`);
-    }
-    return html`${divider ? html`<hr class="my-4">` : ''}${sections}`;
-  }
-
-  formatKeywords(text) {
-    if (!text || text === '-') return html`<span class="opacity-50">-</span>`;
-    return text.split(',').map((kw) => html`<span class="badge bg-dark border text-info me-1" style="font-size:0.75rem;">${kw.trim()}</span>`);
+    return datasheetHtml(this.engine.describe(sel), { divider: true, counts: true });
   }
 
   // ------------------------------------------------------------ print

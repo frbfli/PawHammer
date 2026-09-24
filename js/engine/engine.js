@@ -110,6 +110,7 @@ export class RosterEngine {
   _changed() {
     this.rev++;
     this.roster.updatedAt = Date.now();
+    this._pruneAttachments();
     this._reset();
     for (const fn of this.listeners) fn(this);
   }
@@ -237,7 +238,11 @@ export class RosterEngine {
       if (!target.isRoster) return 0;
       return target.forces.filter((f) => this._matchForce(f, childId)).length;
     }
-    if (field === 'associations') return 0; // leader/attachment associations are not modelled
+    if (field === 'associations') {
+      // Leaders attached to this unit, or units this leader is attached to.
+      if (!target.isSelection || target.virtual) return 0;
+      return this._associated(target).filter((s) => this._matchSelection(s, childId)).length;
+    }
     if (this._isCostType(field)) {
       if (childId !== 'any') {
         let total = 0;
@@ -275,6 +280,83 @@ export class RosterEngine {
   _conditionsPass(m, self) {
     return arr(m.conditions).every((c) => this._checkCondition(c, self)) &&
       arr(m.conditionGroups).every((g) => this._checkGroup(g, self));
+  }
+
+  // ---------------------------------------------------------------- associations (leaders)
+  //
+  // BSData 11e describes Leader/Support attachments as `associations` on the leader's entry:
+  // { id, name, label, min, max, childId: 'unit', conditions/conditionGroups }. Conditions are
+  // evaluated against the candidate unit, or against the leader when `queryFromSelf` is set.
+  // Attachments are stored on the leader selection as [{ assocId, targetId }].
+
+  associationDefs(sel) {
+    return [...arr(sel.def.raw.associations), ...arr(sel.def.link && sel.def.link.associations)];
+  }
+
+  _assocCheck(c, leader, cand) { return this._checkCondition(c, c.queryFromSelf ? leader : cand); }
+
+  _assocGroup(g, leader, cand) {
+    const tests = [
+      ...arr(g.conditions).map((c) => () => this._assocCheck(c, leader, cand)),
+      ...arr(g.conditionGroups).map((cg) => () => this._assocGroup(cg, leader, cand)),
+    ];
+    if (!tests.length) return true;
+    return g.type === 'or' ? tests.some((t) => t()) : tests.every((t) => t());
+  }
+
+  canAttach(leader, assoc, cand) {
+    if (!cand || cand === leader || !cand.isSelection || cand.force !== leader.force) return false;
+    const childId = assoc.childId || 'unit';
+    if (!this._matchSelection(cand, childId)) return false;
+    return arr(assoc.conditions).every((c) => this._assocCheck(c, leader, cand)) &&
+      arr(assoc.conditionGroups).every((g) => this._assocGroup(g, leader, cand));
+  }
+
+  /** Units in the leader's force that this association may attach to. */
+  attachCandidates(leader, assoc) {
+    return leader.force.selections.filter((s) => this.canAttach(leader, assoc, s));
+  }
+
+  attachmentsOf(sel) { return sel.attachments || []; }
+
+  attachedTarget(leader, assocId) {
+    const a = this.attachmentsOf(leader).find((x) => x.assocId === assocId);
+    return a ? this.findSelection(a.targetId) : null;
+  }
+
+  /** Selections attached to `unit` (its leaders / supporting characters). */
+  leadersOf(unit) {
+    if (!unit.force) return [];
+    return unit.force.selections.filter((s) => this.attachmentsOf(s).some((a) => a.targetId === unit.id));
+  }
+
+  /** Everything associated with a selection in either direction. */
+  _associated(sel) {
+    const out = new Set(this.leadersOf(sel));
+    for (const a of this.attachmentsOf(sel)) {
+      const t = this.findSelection(a.targetId);
+      if (t) out.add(t);
+    }
+    return [...out];
+  }
+
+  /** Attach `leader` to `target` via association `assocId` (target null detaches). */
+  attach(leader, assocId, target) {
+    leader.attachments = this.attachmentsOf(leader).filter((a) => a.assocId !== assocId);
+    if (target) leader.attachments.push({ assocId, targetId: target.id });
+    this._changed();
+  }
+
+  /** Drop attachments whose target no longer exists. */
+  _pruneAttachments() {
+    for (const force of this.roster.forces) {
+      const ids = new Set(force.selections.map((s) => s.id));
+      for (const s of force.selections) {
+        if (s.attachments && s.attachments.some((a) => !ids.has(a.targetId))) {
+          s.attachments = s.attachments.filter((a) => ids.has(a.targetId));
+        }
+      }
+    }
   }
 
   _repeatTimes(m, self) {
@@ -786,6 +868,7 @@ export class RosterEngine {
     for (const force of this.roster.forces) {
       this._validateForce(force, push, seen);
       this._validateChildren(force, push, seen);
+      this._validateAttachments(force, push);
     }
     this._validation = issues;
     return issues;
@@ -806,6 +889,29 @@ export class RosterEngine {
     }
   }
 
+  /** Leader attachments: required attachments, and targets that are no longer eligible. */
+  _validateAttachments(force, push) {
+    for (const leader of force.selections) {
+      for (const assoc of this.associationDefs(leader)) {
+        const attached = this.attachmentsOf(leader).filter((a) => a.assocId === assoc.id);
+        const label = assoc.label || assoc.name || 'attachment';
+        if (attached.length < (Number(assoc.min) || 0)) {
+          push('error', `${this.displayName(leader)} must be attached to a unit (${label}).`, leader);
+        }
+        const max = Number(assoc.max);
+        if (max >= 0 && assoc.max != null && attached.length > max) {
+          push('error', `${this.displayName(leader)} can be attached to at most ${max} unit${max === 1 ? '' : 's'}.`, leader);
+        }
+        for (const a of attached) {
+          const target = this.findSelection(a.targetId);
+          if (target && !this.canAttach(leader, assoc, target)) {
+            push('error', `${this.displayName(leader)} cannot be attached to ${this.displayName(target)}.`, leader);
+          }
+        }
+      }
+    }
+  }
+
   _validateChildren(parent, push, seen) {
     const tree = this.optionTree(parent);
     const parentName = parent.isSelection ? this.displayName(parent) : parent.forceEntry.name;
@@ -816,9 +922,14 @@ export class RosterEngine {
           for (const s of opt.selections) push('error', `${this.displayName(s)} is not available in this roster.`, s);
           continue;
         }
-        const self = opt.selections[0] || this._existingOrVirtual(parent, opt.def, opt.groupPath);
-        for (const con of opt.state.constraints) {
-          this._checkConstraint(con, self, opt.state.name, (s) => s.def.id === opt.def.id, push, seen, false, parentName, opt.def.id);
+        // Check each selection of this entry (scope "self" constraints differ per selection,
+        // e.g. how many leaders a unit has); shared scopes are de-duplicated in _checkConstraint.
+        const selves = opt.selections.length ? opt.selections : [this._existingOrVirtual(parent, opt.def, opt.groupPath)];
+        for (const self of selves) {
+          const st = self.virtual ? opt.state : this.evaluate(self);
+          for (const con of st.constraints) {
+            this._checkConstraint(con, self, self.virtual ? opt.state.name : this.displayName(self), (s) => s.def.id === opt.def.id, push, seen, false, parentName, opt.def.id);
+          }
         }
       }
       for (const g of branch.groups) {
@@ -842,7 +953,7 @@ export class RosterEngine {
 
   _checkConstraint(con, self, ownerName, match, push, seen, isCategory, parentName, ownerId, isGroup) {
     const field = con.field || 'selections';
-    if (field === 'associations' || field === 'forces') return;
+    if (field === 'forces') return;
     if (con.type === 'max' && con.value < 0) return;
     const scope = con.scope || 'parent';
     const targets = this._scopeTargets(self, scope);
@@ -856,7 +967,7 @@ export class RosterEngine {
     if (field === 'selections') {
       if (scope === 'self' && !isCategory) count = self.number;
       else count = this._countSelections(target, match, isCategory ? true : !!con.includeChildSelections || scope !== 'parent');
-    } else if (this._isCostType(field)) {
+    } else if (this._isCostType(field) || field === 'associations') {
       count = this._count(target, { field, childId: con.childId || 'any' });
     } else {
       return;
@@ -869,6 +980,12 @@ export class RosterEngine {
     if (isGroup && field === 'selections' && scope === 'parent') {
       const verb = con.type === 'min' ? `choose at least ${fmt(con.value)}` : `choose at most ${fmt(con.value)}`;
       push('error', `${parentName || ownerName}: ${verb} from "${ownerName}" (currently ${fmt(count)}).`, node);
+      return;
+    }
+    if (field === 'associations') {
+      const kind = con.childName || (this.data.categories.get(con.childId) || {}).name || 'unit';
+      const verb = con.type === 'min' ? 'needs at least' : 'can have at most';
+      push('error', `${ownerName}: ${verb} ${fmt(con.value)} ${kind} attached (currently ${fmt(count)}).`, node);
       return;
     }
     const what = field === 'selections' ? '' : ' ' + this.data.costTypeName(field);
@@ -906,20 +1023,26 @@ export class RosterEngine {
     return state;
   }
 
-  /** Profiles and rules for a selection and all its descendants (deduplicated). */
+  /**
+   * Profiles and rules for a selection and all its descendants (deduplicated).
+   * Each profile has a `count`: how many copies the unit carries (e.g. 10 models × 1 bolt pistol).
+   */
   describe(sel) {
     const profiles = [];
     const rules = [];
-    const pSeen = new Set();
+    const pSeen = new Map();
     const rSeen = new Set();
+    let mult = 1;
     const addProfile = (node, link, self) => {
       const st = this._evalInfo(node, link, self, self.id + ':' + (link ? link.id : node.id));
       if (st.hidden) return;
       const typeName = node.typeName || (this.data.profileTypes.find((t) => t.id === node.typeId) || {}).name || 'Profile';
       const k = typeName + '|' + st.name + '|' + st.characteristics.map((c) => c.value).join('|');
-      if (pSeen.has(k)) return;
-      pSeen.add(k);
-      profiles.push({ typeId: node.typeId, typeName, name: st.name, characteristics: st.characteristics });
+      const seen = pSeen.get(k);
+      if (seen) { seen.count += mult; return; }
+      const profile = { typeId: node.typeId, typeName, name: st.name, characteristics: st.characteristics, count: mult };
+      pSeen.set(k, profile);
+      profiles.push(profile);
     };
     const addRule = (node, link, self) => {
       const st = this._evalInfo(node, link, self, self.id + ':' + (link ? link.id : node.id));
@@ -945,12 +1068,13 @@ export class RosterEngine {
         if (!st.hidden) collectInfo(g, self, depth + 1);
       }
     };
-    const visit = (s) => {
+    const visit = (s, m) => {
       const d = s.def;
+      mult = m;
       collectInfo({ profiles: d.profiles, rules: d.rules, infoLinks: d.infoLinks, infoGroups: d.infoGroups }, s);
-      for (const c of s.children) visit(c);
+      for (const c of s.children) visit(c, m * c.number);
     };
-    visit(sel);
+    visit(sel, 1);
     const st = this.evaluate(sel);
     const keywords = [...st.categories].map((id) => (this.data.categories.get(id) || {}).name).filter(Boolean);
     return { profiles, rules, keywords };
@@ -968,6 +1092,12 @@ export class RosterEngine {
       const num = s.number > 1 ? `${s.number}x ` : '';
       const c = depth === 0 && cost ? ` [${fmt(cost)} pts]` : '';
       lines.push(`${'  '.repeat(depth)}${depth ? '• ' : ''}${num}${this.displayName(s)}${c}`);
+      if (depth === 0) {
+        for (const a of this.attachmentsOf(s)) {
+          const t = this.findSelection(a.targetId);
+          if (t) lines.push(`  (attached to ${this.displayName(t)})`);
+        }
+      }
       for (const ch of s.children) line(ch, depth + 1);
     };
     for (const force of this.roster.forces) {
@@ -991,6 +1121,7 @@ export class RosterEngine {
       groupPath: s.groupPath.map((g) => g.key),
       number: s.number,
       customName: s.customName || undefined,
+      attachments: s.attachments && s.attachments.length ? s.attachments : undefined,
       children: s.children.map(ser),
     });
     const r = this.roster;
@@ -1030,6 +1161,7 @@ export class RosterEngine {
       roster.forces.push(force);
       engine._restoreChildren(force, arr(jf.selections));
     }
+    engine._pruneAttachments();
     engine._reset();
     return engine;
   }
@@ -1050,6 +1182,7 @@ export class RosterEngine {
       const sel = new Selection(opt.def, parent, opt.groupPath, js.number || 1);
       sel.id = js.id || sel.id;
       sel.customName = js.customName || '';
+      if (Array.isArray(js.attachments)) sel.attachments = js.attachments.map((a) => ({ assocId: a.assocId, targetId: a.targetId }));
       this._childrenOf(parent).push(sel);
       this._restoreChildren(sel, arr(js.children));
     }

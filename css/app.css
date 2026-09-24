@@ -131,3 +131,13 @@ details.rule > div { font-size: .9rem; padding: .25rem 0 .5rem 1rem; opacity: .8
 [data-bs-theme="light"] #app .alert-dark { background-color: #fff; }
 [data-bs-theme="light"] .unit-list-item.selected { background-color: rgba(44, 62, 80, 0.08); }
 [data-bs-theme="light"] .link-light { color: var(--bs-primary) !important; }
+
+/* Compact datacards on phones (play mode / previews). */
+@media (max-width: 575.98px) {
+    .weapon-table { font-size: .75rem; }
+    .weapon-table th, .weapon-table td { padding: .25rem .3rem; }
+    .weapon-table th { font-size: .65rem; letter-spacing: 0; }
+    .weapon-table .qty { font-size: .65rem; }
+    .stat-box { padding: 4px 6px; min-width: 2.8rem; }
+    .stat-value { font-size: 1rem; }
+}

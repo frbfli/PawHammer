@@ -165,6 +165,52 @@ test('previewEntry describes an unadded unit without changing the roster', () =>
   assert.strictEqual(e.rev, rev, 'no change notification');
 });
 
+test('describe() counts equipped weapons across models', () => {
+  const e = setup();
+  const w = e.addSelection(e.roster.forces[0], unitDef(e, 'Necron Warriors'));
+  e.setNumber(w.children.find((c) => c.def.type === 'model'), 20);
+  const d = e.describe(w);
+  assert.strictEqual(d.profiles.find((p) => p.name === 'Gauss flayer').count, 20);
+  assert.strictEqual(d.profiles.find((p) => p.name === 'Close combat weapon').count, 20);
+});
+
+test('leaders attach to eligible units and are validated', () => {
+  const e = setup();
+  const force = e.roster.forces[0];
+  const overlord = e.addSelection(force, unitDef(e, 'Overlord'));
+  const warriors = e.addSelection(force, unitDef(e, 'Necron Warriors'));
+  const wraiths = e.addSelection(force, unitDef(e, 'Canoptek Wraiths'));
+  const [assoc] = e.associationDefs(overlord);
+  assert.ok(assoc, 'Overlord has a Leader association');
+  const candidates = e.attachCandidates(overlord, assoc);
+  assert.ok(candidates.includes(warriors));
+  assert.ok(!candidates.includes(wraiths));
+  e.attach(overlord, assoc.id, warriors);
+  assert.deepStrictEqual(e.leadersOf(warriors), [overlord]);
+  assert.ok(!e.validate().some((i) => /attached/.test(i.message)), JSON.stringify(e.validate()));
+
+  // A second Leader on the same unit breaks the unit's "max 1 Leader" limit.
+  const overlord2 = e.addSelection(force, unitDef(e, 'Overlord'));
+  e.attach(overlord2, assoc.id, warriors);
+  assert.ok(e.validate().some((i) => /Necron Warriors: can have at most 1 Leader attached/.test(i.message)), JSON.stringify(e.validate()));
+  e.attach(overlord2, assoc.id, null);
+
+  // Technomancer (Support) must be attached, and grants Feel No Pain to the unit it joins.
+  const tech = e.addSelection(force, unitDef(e, 'Technomancer'));
+  assert.ok(e.validate().some((i) => /Technomancer must be attached/.test(i.message)));
+  assert.ok(!e.describe(warriors).rules.some((r) => /Feel No Pain/.test(r.name)));
+  e.attach(tech, e.associationDefs(tech)[0].id, warriors);
+  assert.ok(!e.validate().some((i) => /Technomancer must be attached/.test(i.message)));
+  assert.ok(e.describe(warriors).rules.some((r) => /Feel No Pain/.test(r.name)), 'Feel No Pain unlocked');
+
+  // Attachments survive a save/load round trip and are pruned when the unit is removed.
+  const e2 = RosterEngine.fromJSON(data, JSON.parse(JSON.stringify(e.toJSON())));
+  const w2 = e2.findSelection(warriors.id);
+  assert.strictEqual(e2.leadersOf(w2).length, 2);
+  e2.removeSelection(w2);
+  assert.ok(e2.roster.forces[0].selections.every((s) => !(s.attachments || []).length));
+});
+
 test('JSON round trip preserves the roster', () => {
   const e = setup();
   const force = e.roster.forces[0];

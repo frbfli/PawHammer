@@ -35,6 +35,7 @@ export function renderHome(app) {
                     <div class="dropdown" data-stop>
                       <button class="btn btn-sm btn-outline-light border-0 fs-5" data-bs-toggle="dropdown" aria-label="Roster actions"><i class="bi bi-three-dots-vertical"></i></button>
                       <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#/play/${encodeURIComponent(r.id)}"><i class="bi bi-play-fill me-1"></i>Play Mode</a></li>
                         <li><button class="dropdown-item" data-dup="${r.id}"><i class="bi bi-copy me-1"></i>Duplicate</button></li>
                         <li><button class="dropdown-item" data-export="${r.id}"><i class="bi bi-download me-1"></i>Export JSON</button></li>
                         <li><hr class="dropdown-divider"></li>

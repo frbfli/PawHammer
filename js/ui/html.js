@@ -52,7 +52,19 @@ export class Actions {
         fn(ev, el);
       }
     };
-    for (const t of ['click', 'change', 'input', 'keydown']) root.addEventListener(t, dispatch(t));
+    // Enter/Space activates focusable non-button elements with actions (e.g. list rows).
+    const onKey = (ev) => {
+      const el = ev.target;
+      if ((ev.key === 'Enter' || ev.key === ' ') && el.matches('[data-act][tabindex]') && !el.matches('input,select,textarea,button')) {
+        ev.preventDefault();
+        el.click();
+      }
+    };
+    const handlers = ['click', 'change', 'input', 'keydown'].map((t) => [t, dispatch(t)]);
+    handlers.push(['keydown', onKey]);
+    for (const [t, h] of handlers) root.addEventListener(t, h);
+    /** Remove the listeners (call when the view is torn down). */
+    return () => { for (const [t, h] of handlers) root.removeEventListener(t, h); };
   }
 }
 

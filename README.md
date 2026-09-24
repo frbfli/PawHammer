@@ -24,7 +24,14 @@ Any static file server works; ES modules just need to be served over HTTP, not o
   army configuration (Battle Size, Detachment, Force Disposition).
 - Live validation of the data's own rules: minimum and maximum selections, per-army limits
   (epic heroes, enhancements), category requirements, and points limits.
-- Datasheet view with unit stats, weapon tables, abilities, rules and keywords.
+- Datasheet view with unit stats, weapon tables (with equipped quantities, e.g. "Bolt pistol ×10"),
+  abilities, rules and keywords.
+- Leaders and support characters: attach a character to an eligible unit (as defined by the data).
+  The builder enforces limits such as one Leader per unit and required attachments, and unlocks
+  rules that depend on the attachment (e.g. a Technomancer granting Feel No Pain).
+- **Play Mode**: a read-only view for the table. Each unit shows with its attached characters, and
+  tapping one opens its datacard with equipped weapon counts, abilities, Warlord and enhancements,
+  plus the detachment rules.
 - Rosters auto-save to browser storage. You can export them as text or JSON, re-import them,
   and print them as datasheets.
 - Data files are cached in IndexedDB and re-downloaded only when the repository changes.
@@ -60,9 +67,10 @@ The engine implements the BattleScribe data model in the JSON form BSData uses f
 
 A selection with `number` N stands for N identical copies, and its children are counted per copy.
 
-**Not supported:** leader/attachment associations (`field: "associations"`), and modifiers
-that use the NewRecruit `affects` extension to target other objects. Constraints and
-conditions that rely on these are skipped.
+Leader/Support attachments use the data's `associations`, which list eligible units as conditions.
+They are stored on the leader selection and counted wherever the data checks `field: "associations"`.
+
+**Not supported:** modifiers that use the NewRecruit `affects` extension to target other objects.
 
 ## Tests
 

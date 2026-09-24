@@ -7,6 +7,7 @@ import { store } from './ui/store.js';
 import { html } from './ui/html.js';
 import { renderHome, openNewRoster } from './ui/home.js';
 import { Editor } from './ui/editor.js';
+import { PlayView } from './ui/play.js';
 import { toast } from './ui/toast.js';
 
 class App {
@@ -142,23 +143,24 @@ class App {
     if (this.view && this.view.destroy) this.view.destroy();
     this.view = null;
     const hash = location.hash || '#/';
-    const m = /^#\/roster\/(.+)$/.exec(hash);
+    const m = /^#\/(roster|play)\/(.+)$/.exec(hash);
     document.getElementById('nav-rosters').classList.toggle('active', !m);
     if (!m) {
       document.title = 'PawHammer — Warhammer 40,000 List Builder';
       renderHome(this);
       return;
     }
-    const json = store.getRoster(decodeURIComponent(m[1]));
+    const json = store.getRoster(decodeURIComponent(m[2]));
     if (!json) { this.showError(new Error('Roster not found in this browser.')); return; }
     this.showLoading(`Loading ${json.catalogueName || 'army data'}…`);
     try {
       const data = await this.loadGameData(json.catalogueId, (msg) => this.showLoading(msg));
       if (location.hash !== hash) return;
       const engine = RosterEngine.fromJSON(data, json);
-      document.title = `${engine.roster.name} — PawHammer`;
+      const play = m[1] === 'play';
+      document.title = `${play ? 'Play: ' : ''}${engine.roster.name} — PawHammer`;
       this.root.innerHTML = '';
-      this.view = new Editor(this, engine);
+      this.view = play ? new PlayView(this, engine) : new Editor(this, engine);
     } catch (err) {
       this.showError(err);
     }
