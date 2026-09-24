@@ -5,7 +5,7 @@ import { cacheClear } from './data/cache.js';
 import { RosterEngine } from './engine/engine.js';
 import { store } from './ui/store.js';
 import { html } from './ui/html.js';
-import { renderHome } from './ui/home.js';
+import { renderHome, openNewRoster } from './ui/home.js';
 import { Editor } from './ui/editor.js';
 import { toast } from './ui/toast.js';
 
@@ -38,8 +38,11 @@ class App {
     return this.gameData.get(catalogueId);
   }
 
+  /** Dark mode uses Bootswatch Darkly, light mode its sibling theme Flatly. */
   applyTheme(theme) {
-    document.documentElement.setAttribute('data-bs-theme', theme === 'light' ? 'light' : 'dark');
+    const light = theme === 'light';
+    document.documentElement.setAttribute('data-bs-theme', light ? 'light' : 'dark');
+    document.getElementById('theme-css').href = `https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/${light ? 'flatly' : 'darkly'}/bootstrap.min.css`;
   }
 
   bindChrome() {
@@ -56,7 +59,9 @@ class App {
       settingsEl.querySelector('#set-repo').value = src.repo;
       settingsEl.querySelector('#set-branch').value = src.branch;
     };
-    document.getElementById('btn-settings').addEventListener('click', () => {
+    document.getElementById('nav-new').addEventListener('click', (ev) => { ev.preventDefault(); openNewRoster(this); });
+    document.getElementById('btn-settings').addEventListener('click', (ev) => {
+      ev.preventDefault();
       fill(store.settings().source);
       settingsEl.querySelector('#set-local').value = '';
       settingsModal.show();
@@ -121,7 +126,7 @@ class App {
   showLoading(message) {
     if (this.view && this.view.destroy) { this.view.destroy(); this.view = null; }
     this.root.innerHTML = String(html`<div class="loading-overlay">
-      <div class="spinner-border text-accent" role="status" aria-hidden="true"></div>
+      <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
       <div>${message}</div></div>`);
   }
 
@@ -138,6 +143,7 @@ class App {
     this.view = null;
     const hash = location.hash || '#/';
     const m = /^#\/roster\/(.+)$/.exec(hash);
+    document.getElementById('nav-rosters').classList.toggle('active', !m);
     if (!m) {
       document.title = 'PawHammer — Warhammer 40,000 List Builder';
       renderHome(this);

@@ -13,65 +13,57 @@ export function renderHome(app) {
   const root = app.root;
   const rosters = store.listRosters();
   root.innerHTML = String(html`
-    <div class="container py-4">
-      <section class="hero rounded-4 p-4 p-md-5 mb-4">
-        <div class="row align-items-center g-4">
-          <div class="col-md-8">
-            <h1 class="display-font h2 mb-2">Forge your army</h1>
-            <p class="text-body-secondary mb-3">Build and validate Warhammer 40,000 11th edition army lists.
-              Rules, points and options come from the community-maintained
-              <a href="https://github.com/${app.repo.source.owner || 'BSData'}/${app.repo.source.repo || ''}" target="_blank" rel="noopener">BSData</a> repository.</p>
-            <div class="d-flex flex-wrap gap-2">
-              <button class="btn btn-primary" id="btn-new"><i class="bi bi-plus-lg"></i> New roster</button>
-              <label class="btn btn-outline-secondary mb-0">
-                <i class="bi bi-upload"></i> Import roster
-                <input type="file" accept=".json,application/json" id="import-file" hidden>
-              </label>
-            </div>
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div class="p-4 border rounded bg-secondary h-100 d-flex flex-column">
+          <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+            <h3 class="mb-0 fw-bold">Your Rosters</h3>
+            <span class="badge bg-primary fs-6">${rosters.length} saved</span>
           </div>
-          <div class="col-md-4">
-            <div class="small text-body-secondary" id="data-status">
-              <div class="d-flex align-items-center gap-2"><span class="spinner-border spinner-border-sm"></span> Checking data source…</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div class="d-flex align-items-baseline justify-content-between mb-2">
-        <h2 class="h5 mb-0">Your rosters</h2>
-        <span class="small text-body-secondary">${rosters.length} saved in this browser</span>
-      </div>
-      ${rosters.length ? html`
-        <div class="row g-3">
-          ${rosters.map((r) => html`
-            <div class="col-sm-6 col-lg-4">
-              <div class="card roster-card h-100" data-open="${r.id}" tabindex="0" role="link" aria-label="Open ${r.name}">
-                <div class="card-body">
-                  <div class="d-flex justify-content-between align-items-start gap-2">
-                    <h3 class="h6 card-title mb-1 text-truncate">${r.name}</h3>
+          <p class="small opacity-75 mb-2"><i class="bi bi-info-circle me-1"></i>Rosters are saved in this browser. Click a roster to open it.</p>
+          ${rosters.length ? html`
+            <ul class="list-group">
+              ${rosters.map((r) => html`
+                <li class="list-group-item bg-dark text-light unit-list-item d-flex justify-content-between align-items-center py-3 border-bottom"
+                  data-open="${r.id}" tabindex="0" role="link" aria-label="Open ${r.name}">
+                  <div class="me-2" style="min-width:0">
+                    <div class="fw-bold text-primary text-truncate">${r.name}</div>
+                    <small class="opacity-75 d-block">${r.catalogueName || 'Unknown faction'} • ${new Date(r.updatedAt || Date.now()).toLocaleDateString()}</small>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary rounded-pill pts">${fmtPts(r.points)} pts</span>
                     <div class="dropdown" data-stop>
-                      <button class="btn btn-sm btn-link text-body-secondary p-0" data-bs-toggle="dropdown" aria-label="Roster actions"><i class="bi bi-three-dots-vertical"></i></button>
+                      <button class="btn btn-sm btn-outline-light border-0 fs-5" data-bs-toggle="dropdown" aria-label="Roster actions"><i class="bi bi-three-dots-vertical"></i></button>
                       <ul class="dropdown-menu dropdown-menu-end">
-                        <li><button class="dropdown-item" data-dup="${r.id}"><i class="bi bi-copy"></i> Duplicate</button></li>
-                        <li><button class="dropdown-item" data-export="${r.id}"><i class="bi bi-download"></i> Export JSON</button></li>
+                        <li><button class="dropdown-item" data-dup="${r.id}"><i class="bi bi-copy me-1"></i>Duplicate</button></li>
+                        <li><button class="dropdown-item" data-export="${r.id}"><i class="bi bi-download me-1"></i>Export JSON</button></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><button class="dropdown-item text-danger" data-del="${r.id}"><i class="bi bi-trash"></i> Delete</button></li>
+                        <li><button class="dropdown-item text-danger" data-del="${r.id}"><i class="bi bi-trash me-1"></i>Delete</button></li>
                       </ul>
                     </div>
                   </div>
-                  <div class="small text-body-secondary mb-2">${r.catalogueName || 'Unknown faction'}</div>
-                  <div class="d-flex justify-content-between small">
-                    <span class="pts fw-semibold text-accent">${fmtPts(r.points)} pts</span>
-                    <span class="text-body-secondary">${new Date(r.updatedAt || Date.now()).toLocaleDateString()}</span>
-                  </div>
-                </div>
-              </div>
-            </div>`)}
-        </div>` : html`
-        <div class="card"><div class="empty-state">
-          <i class="bi bi-journal-plus"></i>
-          No rosters yet. Create one to get started.
-        </div></div>`}
+                </li>`)}
+            </ul>` : html`
+            <ul class="list-group"><li class="list-group-item bg-dark text-light text-center opacity-75 py-4">No rosters yet. Create one to get started.</li></ul>`}
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="p-4 border rounded bg-secondary h-100">
+          <h3 class="fw-bold border-bottom pb-2 mb-3">Get Started</h3>
+          <p class="opacity-75">Build and validate Warhammer 40,000 11th edition army lists. Rules, points and options come
+            from the community-maintained <a href="https://github.com/${app.repo.source.owner || 'BSData'}/${app.repo.source.repo || ''}" class="link-light" target="_blank" rel="noopener">BSData</a> repository.</p>
+          <div class="d-grid gap-2 mb-4">
+            <button class="btn btn-success" id="btn-new"><i class="bi bi-plus-lg me-1"></i>New Roster</button>
+            <label class="btn btn-outline-light mb-0">
+              <i class="bi bi-upload me-1"></i>Import Roster
+              <input type="file" accept=".json,application/json" id="import-file" hidden>
+            </label>
+          </div>
+          <div class="alert alert-dark small mb-0" id="data-status">
+            <div class="d-flex align-items-center gap-2"><span class="spinner-border spinner-border-sm"></span> Checking data source…</div>
+          </div>
+        </div>
+      </div>
     </div>`);
 
   root.querySelector('#btn-new').addEventListener('click', () => openNewRoster(app));
@@ -125,14 +117,14 @@ async function showDataStatus(app) {
     const manifest = await app.repo.manifest((done, total) => {
       const e = document.getElementById('data-status');
       if (e) e.innerHTML = String(html`<div class="mb-1">Indexing data files… ${done}/${total}</div>
-        <div class="progress" style="height:.35rem"><div class="progress-bar bg-accent" style="width:${Math.round((done / total) * 100)}%"></div></div>`);
+        <div class="progress" style="height:.35rem"><div class="progress-bar bg-success" style="width:${Math.round((done / total) * 100)}%"></div></div>`);
     });
     const gs = manifest.find((m) => m.type === 'gameSystem');
     const factions = manifest.filter((m) => m.type === 'catalogue' && !m.library).length;
     if (!document.getElementById('data-status')) return;
     document.getElementById('data-status').innerHTML = String(html`
       <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-check-circle-fill text-success"></i>
-        <strong class="text-body">${gs ? gs.name : 'No game system found'}</strong></div>
+        <strong>${gs ? gs.name : 'No game system found'}</strong></div>
       <div>${factions} factions available</div>
       <div class="text-truncate" title="${app.repo.source.label}">Source: ${app.repo.source.label}</div>`);
   } catch (err) {

@@ -651,6 +651,25 @@ export class RosterEngine {
     this._changed();
   }
 
+  /**
+   * Datasheet preview for an entry that has not been added: builds it with its default
+   * selections, describes it, then removes it again without notifying listeners.
+   */
+  previewEntry(parent, def) {
+    const sel = new Selection(def, parent, [], 1);
+    const list = this._childrenOf(parent);
+    list.push(sel);
+    this._reset();
+    try {
+      this._autofill(sel);
+      this._reset();
+      return { points: this.points(sel), models: this.modelCount(sel), info: this.describe(sel) };
+    } finally {
+      list.splice(list.indexOf(sel), 1);
+      this._reset();
+    }
+  }
+
   duplicate(sel) {
     const clone = (s, parent) => {
       const c = new Selection(s.def, parent, s.groupPath, s.number);

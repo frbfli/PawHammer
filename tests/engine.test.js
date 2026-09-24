@@ -152,6 +152,19 @@ test('describe() returns datasheet profiles and rules', () => {
   assert.ok(d.keywords.includes('Infantry'));
 });
 
+test('previewEntry describes an unadded unit without changing the roster', () => {
+  const e = setup();
+  const force = e.roster.forces[0];
+  const before = JSON.stringify(e.toJSON());
+  const rev = e.rev;
+  const preview = e.previewEntry(force, unitDef(e, 'Necron Warriors'));
+  assert.strictEqual(preview.points, 85);
+  assert.strictEqual(preview.models, 10);
+  assert.ok(preview.info.profiles.some((p) => p.name === 'Gauss flayer'));
+  assert.strictEqual(JSON.stringify(e.toJSON()), before);
+  assert.strictEqual(e.rev, rev, 'no change notification');
+});
+
 test('JSON round trip preserves the roster', () => {
   const e = setup();
   const force = e.roster.forces[0];
