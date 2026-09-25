@@ -956,6 +956,9 @@ export class RosterEngine {
     if (field === 'forces') return;
     if (con.type === 'max' && con.value < 0) return;
     const scope = con.scope || 'parent';
+    // An entry that is not in the roster has nothing of its own to validate: constraints on
+    // itself (e.g. "must be attached to a unit") only apply once it is actually selected.
+    if (self.virtual && (scope === 'self' || field === 'associations')) return;
     const targets = this._scopeTargets(self, scope);
     const target = targets[0];
     if (!target) return;
@@ -976,7 +979,12 @@ export class RosterEngine {
     const fails = con.type === 'min' ? count < con.value : con.type === 'max' ? count > con.value : false;
     if (!fails) return;
     const node = self.isSelection && !self.virtual ? self : (target.isSelection ? target : null);
-    if (con.message) { push('error', `${ownerName}: ${con.message}`, node); return; }
+    if (con.message) {
+      // Data messages may use "{this}" for the entry's own name.
+      const msg = String(con.message).replace(/\{this\}/g, ownerName);
+      push('error', msg.includes(ownerName) ? msg : `${ownerName}: ${msg}`, node);
+      return;
+    }
     if (isGroup && field === 'selections' && scope === 'parent') {
       const verb = con.type === 'min' ? `choose at least ${fmt(con.value)}` : `choose at most ${fmt(con.value)}`;
       push('error', `${parentName || ownerName}: ${verb} from "${ownerName}" (currently ${fmt(count)}).`, node);

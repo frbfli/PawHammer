@@ -141,3 +141,40 @@ details.rule > div { font-size: .9rem; padding: .25rem 0 .5rem 1rem; opacity: .8
     .stat-box { padding: 4px 6px; min-width: 2.8rem; }
     .stat-value { font-size: 1rem; }
 }
+
+/* Inline rules for configuration choices (detachments, force dispositions). */
+.rules-toggle { color: inherit; font-weight: 600; }
+.rules-toggle:hover, .rules-toggle[aria-expanded="true"] { color: var(--bs-info); }
+.rules-panel { margin: 0 0 .5rem 2.5rem; padding: .5rem .75rem; border-left: 3px solid var(--bs-info); background: rgba(0, 0, 0, .15); border-radius: 0 .375rem .375rem 0; }
+
+/* Weapon tables: keywords sit on their own line under each weapon, striped per weapon. */
+.weapon-table tr.alt > * { --bs-table-bg-type: var(--bs-table-striped-bg); }
+.weapon-table tr.has-kw, .weapon-table tr.has-kw > * { border-bottom-width: 0; }
+.weapon-table tr.kw-row { border-top-width: 0; }
+.weapon-table tr.kw-row > td { border-top-width: 0; padding-top: 0; padding-bottom: .5rem; }
+.weapon-table tr.kw-row .badge { margin-bottom: .15rem; }
+
+/* Weapon keyword badges that open their rule. */
+.kw-badge { cursor: pointer; }
+.kw-badge:hover, .kw-badge:focus-visible { background-color: var(--bs-info) !important; color: #111 !important; }
+
+/* Phone weapon cards (replace the weapon table below 576px). */
+.weapon-cards { border: 1px solid var(--bs-border-color); border-radius: .375rem; overflow: hidden; }
+.weapon-card { padding: .6rem .75rem; background: var(--bs-dark); }
+.weapon-card:nth-child(odd) { background: rgba(255, 255, 255, .06); }
+.weapon-card + .weapon-card { border-top: 1px solid var(--bs-border-color); }
+.weapon-stats { display: grid; gap: .3rem; margin-top: .4rem; }
+.weapon-stats .stat-box { padding: 4px 2px; min-width: 0; }
+.weapon-stats .stat-label { font-size: .62rem; }
+.weapon-stats .stat-value { font-size: .95rem; white-space: nowrap; }
+[data-bs-theme="light"] .weapon-card { background: #fff; }
+[data-bs-theme="light"] .weapon-card:nth-child(odd) { background: rgba(0, 0, 0, .04); }
+
+/* Characteristic rows: one even grid row. */
+.stat-line { display: grid; gap: .5rem; }
+.stat-line .stat-box { min-width: 0; padding: 6px 2px; }
+.stat-line .stat-value { white-space: nowrap; }
+@media (max-width: 575.98px) {
+    .stat-line { gap: .3rem; }
+    .stat-line .stat-label { font-size: .62rem; }
+}

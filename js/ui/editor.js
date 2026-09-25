@@ -19,6 +19,7 @@ export class Editor {
     this.search = '';
     this.showIssues = false;
     this.collapsedCats = new Set();
+    this.openRules = new Set(); // option rules panels the user has expanded
     this.tab = 'units'; // phone layout: 'units' (selector + previews) or 'army' (list + editor)
     this.previewKey = null;
     this._saveTimer = null;
@@ -196,7 +197,9 @@ export class Editor {
     const q = this.search;
     const blocks = [];
     for (const cat of cats) {
-      const opts = q ? cat.options.filter((o) => o.state.name.toLowerCase().includes(q)) : cat.options;
+      // Army configuration (Battle Size, Detachment, …) lives in the Army List, not here.
+      const units = cat.options.filter((o) => !this.isConfigDef(o.def));
+      const opts = q ? units.filter((o) => o.state.name.toLowerCase().includes(q)) : units;
       if (!opts.length) continue;
       const collapsed = !q && this.collapsedCats.has(cat.categoryId);
       blocks.push(html`
@@ -234,6 +237,33 @@ export class Editor {
         </div>`);
     }
     el.innerHTML = String(blocks.length ? html`${blocks}` : html`<div class="empty-state small">No datasheets match “${this.search}”.</div>`);
+  }
+
+  /** Army configuration entries (Battle Size, Detachment, Show/Hide Options, …) rather than units. */
+  isConfigDef(def) { return def.type === 'upgrade'; }
+
+  /** Configuration in the order it is chosen: Battle Size, Detachment, Force Disposition, then the rest. */
+  inListOrder(selections) {
+    const order = ['Battle Size', 'Detachment', 'Force Disposition'];
+    const rank = (s) => { const i = order.indexOf(s.def.name); return this.isConfigDef(s.def) ? (i === -1 ? order.length : i) : 0; };
+    return [...selections].sort((a, b) => rank(a) - rank(b));
+  }
+
+  /** True for configuration entries the roster doesn't require (e.g. Show/Hide Options). */
+  isOptionalConfig(sel) {
+    const opt = this.engine.optionTree(sel.parent).entries.find((o) => o.def === sel.def);
+    return !!opt && opt.min === 0;
+  }
+
+  /** Optional configuration entries not yet in the roster, offered at the end of the Configuration list. */
+  optionalConfigRows(force) {
+    return this.engine.optionTree(force).entries
+      .filter((o) => !o.hidden && this.isConfigDef(o.def) && o.count === 0)
+      .map((o) => html`<li class="list-group-item bg-dark text-light d-flex justify-content-between align-items-center py-2">
+        <span class="opacity-75">${o.state.name}</span>
+        <button type="button" class="btn btn-sm btn-outline-light border-0 text-nowrap"
+          data-act="${this.actions.add(() => this.addUnit(o.def))}"><i class="bi bi-plus-lg"></i> Add</button>
+      </li>`);
   }
 
   addUnit(def) {
@@ -298,7 +328,8 @@ export class Editor {
           <div class="list-cat-heading"><span>${grp.name}</span>
             <span class="pts">${(() => { const t = grp.selections.reduce((n, s) => n + e.points(s), 0); return t ? fmtPts(t) + ' pts' : ''; })()}</span></div>
           <ul class="list-group mb-2">
-            ${grp.selections.map((s) => this.unitRow(s, issuesBySel.get(s.id) || 0))}
+            ${this.inListOrder(grp.selections).map((s) => this.unitRow(s, issuesBySel.get(s.id) || 0))}
+            ${grp.selections.some((s) => this.isConfigDef(s.def)) ? this.optionalConfigRows(force) : ''}
           </ul>
         `)}
         ${force.selections.every((s) => s.def.type === 'upgrade') ? html`
@@ -320,6 +351,9 @@ export class Editor {
         </div>
         <div class="d-flex align-items-center gap-1">
           ${pts ? html`<span class="badge bg-primary rounded-pill pts">${fmtPts(pts)} pts</span>` : ''}
+          ${isConfig && this.isOptionalConfig(s) ? html`
+            <button type="button" class="btn btn-sm btn-outline-danger border-0 fs-6" title="Remove" aria-label="Remove ${e.displayName(s)}"
+              data-act="${this.actions.add((ev) => { ev.stopPropagation(); this.removeUnit(s); })}"><i class="bi bi-trash"></i></button>` : ''}
           ${isConfig ? '' : html`
             <button type="button" class="btn btn-sm btn-outline-light border-0 fs-6" title="Duplicate" aria-label="Duplicate ${e.displayName(s)}"
               data-act="${this.actions.add((ev) => { ev.stopPropagation(); this.select(e.duplicate(s)); })}"><i class="bi bi-copy"></i></button>
@@ -468,9 +502,45 @@ export class Editor {
     return parts;
   }
 
+  /** Cost badges for every visible cost type, e.g. "+20 pts" or "3 DP" (Detachment Points). */
   costLabel(opt) {
-    const c = opt.state.costs[this.pts] || 0;
-    return c ? html`<span class="badge bg-primary rounded-pill pts">+${fmtPts(c)} pts</span>` : '';
+    return this.engine.visibleCostTypes()
+      .map((t) => ({ t, v: opt.state.costs[t.id] || 0 }))
+      .filter((x) => x.v)
+      .map(({ t, v }) => (t.id === this.pts
+        ? html`<span class="badge bg-primary rounded-pill pts">+${fmtPts(v)} pts</span>`
+        : html`<span class="badge bg-info rounded-pill pts" title="${t.name}">${fmtPts(v)} ${t.name.split(/\s+/).map((w) => w[0]).join('').toUpperCase()}</span>`));
+  }
+
+  /** Configuration choices (detachments, force dispositions, …) can show their rules inline. */
+  hasRules(parent, opt) {
+    const d = opt.def;
+    return parent.isSelection && this.isConfigDef(parent.rootEntry.def) &&
+      !!(d.infoLinks.length || d.profiles.length || d.rules.length || d.infoGroups.length);
+  }
+
+  /** Option name: a plain label, or a toggle that reveals the option's rules. */
+  optionName(parent, opt, id, cls = '') {
+    if (!this.hasRules(parent, opt)) return html`<label class="form-check-label ${cls}" for="${id}">${opt.state.name}</label>`;
+    const key = parent.id + ':' + opt.def.key;
+    const open = this.openRules.has(key);
+    return html`<button type="button" class="btn btn-link p-0 text-start text-decoration-none rules-toggle ${cls}" aria-expanded="${open}"
+      title="${open ? 'Hide' : 'Show'} rules for ${opt.state.name}"
+      data-act="${this.actions.add(() => { open ? this.openRules.delete(key) : this.openRules.add(key); this.renderUnit(); })}">
+      ${opt.state.name} <i class="bi ${open ? 'bi-chevron-up' : 'bi-book'} small ms-1"></i></button>`;
+  }
+
+  rulesPanel(parent, opt) {
+    if (!this.hasRules(parent, opt) || !this.openRules.has(parent.id + ':' + opt.def.key)) return '';
+    const sel = opt.selections[0] || new VirtualSelection(opt.def, parent, opt.groupPath);
+    const info = this.engine.describe(sel);
+    return html`<div class="rules-panel small mb-2">
+      ${info.rules.map((r) => html`<div class="mb-2"><div class="fw-bold text-primary">${r.name}</div>
+        <div class="opacity-75">${r.description ? richText(r.description) : html`<em>No description in data.</em>`}</div></div>`)}
+      ${info.profiles.map((p) => html`<div class="mb-2"><div class="fw-bold text-primary">${p.name} <span class="badge bg-dark border fw-normal">${p.typeName}</span></div>
+        <div class="opacity-75">${p.characteristics.length === 1 ? richText(p.characteristics[0].value) : p.characteristics.map((c) => html`<div><strong>${c.name}:</strong> ${richText(c.value)}</div>`)}</div></div>`)}
+      ${!info.rules.length && !info.profiles.length ? html`<em class="opacity-75">No rules text in the data.</em>` : ''}
+    </div>`;
   }
 
   limitHint(min, max) {
@@ -486,16 +556,16 @@ export class Editor {
     let control;
     if (opt.max === 1 && opt.min <= 1) {
       control = html`<div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" id="${id}" ${opt.count > 0 ? 'checked' : ''} ${opt.min === 1 && opt.count === 1 ? 'disabled' : ''}
+        <input class="form-check-input" type="checkbox" id="${id}" aria-label="${opt.state.name}" ${opt.count > 0 ? 'checked' : ''} ${opt.min === 1 && opt.count === 1 ? 'disabled' : ''}
           data-act="${this.actions.add((ev) => e.setOptionCount(parent, opt.def, opt.groupPath, ev.target.checked ? 1 : 0))}">
-        <label class="form-check-label ${invalid ? 'text-danger' : ''}" for="${id}">${opt.state.name}</label>
+        ${this.optionName(parent, opt, id, invalid ? 'text-danger' : '')}
       </div>`;
     } else {
       control = html`<span class="opt-name ${invalid ? 'text-danger' : ''}">${opt.state.name}
         <span class="limit-hint ms-1">${this.limitHint(opt.min, opt.max)}</span></span>
         ${this.stepper(opt.count, opt.min, opt.max, (n) => e.setOptionCount(parent, opt.def, opt.groupPath, n), opt.state.name)}`;
     }
-    return html`<div class="opt-row">${control}${this.costLabel(opt)}</div>${nested}`;
+    return html`<div class="opt-row">${control}${this.costLabel(opt)}</div>${this.rulesPanel(parent, opt)}${nested}`;
   }
 
   stepper(value, min, max, set, label) {
@@ -527,9 +597,10 @@ export class Editor {
       for (const opt of visible) {
         const id = name + '-' + opt.def.key;
         rows.push(html`<div class="opt-row"><div class="form-check">
-          <input class="form-check-input" type="radio" name="${name}" id="${id}" ${opt.count > 0 ? 'checked' : ''}
+          <input class="form-check-input" type="radio" name="${name}" id="${id}" aria-label="${opt.state.name}" ${opt.count > 0 ? 'checked' : ''}
             data-act="${this.actions.add(() => e.chooseInGroup(parent, g.def, opt.def, opt.groupPath))}">
-          <label class="form-check-label" for="${id}">${opt.state.name}</label></div>${this.costLabel(opt)}</div>
+          ${this.optionName(parent, opt, id)}</div>${this.costLabel(opt)}</div>
+          ${this.rulesPanel(parent, opt)}
           ${opt.count > 0 ? this.childOptionsHtml(opt.selections, depth) : ''}`);
       }
       body = rows;

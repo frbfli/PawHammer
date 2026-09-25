@@ -3,7 +3,7 @@
 // weapon quantities, abilities, rules and keywords.
 
 import { html, richText, Actions, fmtPts } from './html.js';
-import { datasheetHtml } from './datasheet.js';
+import { combinedDatasheetHtml } from './datasheet.js';
 
 export class PlayView {
   /** @param {import('../engine/engine.js').RosterEngine} engine */
@@ -161,34 +161,55 @@ export class PlayView {
       ${active ? html`<li class="list-group-item bg-secondary text-light d-lg-none py-3 px-2">${this.cardHtml(s)}</li>` : ''}`;
   }
 
-  /** Datacard for a unit and every character attached to it. */
+  /** Role of an attached character on `unit`: the association it uses (e.g. "Leading", "Supporting"). */
+  roleOf(m, unit) {
+    const e = this.engine;
+    return e.associationDefs(m).find((a) => e.attachmentsOf(m).some((x) => x.assocId === a.id && x.targetId === unit.id)) || null;
+  }
+
+  /** Combined-unit members in datacard order: leaders, then support characters, then the bodyguard unit. */
+  orderedMembers(unit) {
+    const rank = (m) => {
+      if (m === unit) return 3;
+      const role = this.roleOf(m, unit);
+      const name = role ? `${role.name || ''} ${role.label || ''}` : '';
+      return /lead/i.test(name) ? 0 : /support/i.test(name) ? 1 : 2;
+    };
+    return this.members(unit).map((m, i) => ({ m, i })).sort((a, b) => rank(a.m) - rank(b.m) || a.i - b.i).map((x) => x.m);
+  }
+
+  /** Datacard for a unit and every character attached to it, combined into one card. */
   cardHtml(unit) {
     const e = this.engine;
-    const members = this.members(unit);
+    const members = this.orderedMembers(unit);
     const total = members.reduce((n, m) => n + e.points(m), 0);
     const models = members.reduce((n, m) => n + e.modelCount(m), 0);
+    const nameOf = (m) => (m === unit ? this.unitLabel(m) : e.displayName(m));
+    const entries = members.map((m) => {
+      const role = m === unit ? null : this.roleOf(m, unit);
+      const honours = this.honours(m);
+      return {
+        name: nameOf(m),
+        info: e.describe(m),
+        header: html`<span class="d-flex flex-wrap align-items-center gap-1">
+          ${members.length > 1 ? (role
+            ? html`<span class="badge bg-info">${role.name || role.label}</span>`
+            : html`<span class="badge bg-dark border">Bodyguard</span>`) : ''}
+          ${honours.map((h) => (h.kind === 'warlord'
+            ? html`<span class="badge bg-warning text-dark"><i class="bi bi-star-fill me-1"></i>Warlord</span>`
+            : html`<span class="badge bg-success"><i class="bi bi-gem me-1"></i>${h.name}</span>`))}
+          ${members.length > 1 ? html`<span class="badge bg-primary rounded-pill pts">${fmtPts(e.points(m))} pts</span>` : ''}
+        </span>`,
+      };
+    });
     return html`
       <div class="bg-primary text-white rounded p-3 mb-3 d-flex justify-content-between align-items-start gap-2">
         <div style="min-width:0">
-          <h5 class="fw-bold mb-0">${members.map((m) => (m === unit ? this.unitLabel(m) : e.displayName(m))).join(' + ')}</h5>
+          <h5 class="fw-bold mb-0">${members.map(nameOf).join(' + ')}</h5>
           <small class="opacity-75">${models ? `${models} model${models === 1 ? '' : 's'}` : ''}${members.length > 1 ? ' • attached unit' : ''}</small>
         </div>
         <div class="fs-5 fw-bold pts">${fmtPts(total)} pts</div>
       </div>
-      ${members.map((m, i) => {
-        const honours = this.honours(m);
-        const role = i === 0 ? null : e.associationDefs(m).find((a) => e.attachmentsOf(m).some((x) => x.assocId === a.id && x.targetId === unit.id));
-        return html`<div class="${i ? 'mt-4 pt-3 border-top' : ''}">
-          ${members.length > 1 ? html`<div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="fw-bold mb-0">${m === unit ? this.unitLabel(m) : e.displayName(m)}
-              ${role ? html`<span class="badge bg-info ms-1">${role.name || role.label}</span>` : html`<span class="badge bg-dark border ms-1">Bodyguard</span>`}</h5>
-            <span class="badge bg-primary rounded-pill pts">${fmtPts(e.points(m))} pts</span>
-          </div>` : ''}
-          ${honours.length ? html`<div class="d-flex flex-wrap gap-2 mb-3">${honours.map((h) => h.kind === 'warlord'
-            ? html`<span class="badge bg-warning text-dark p-2"><i class="bi bi-star-fill me-1"></i>Warlord</span>`
-            : html`<span class="badge bg-success p-2"><i class="bi bi-gem me-1"></i>Enhancement: ${h.name}</span>`)}</div>` : ''}
-          ${datasheetHtml(e.describe(m), { counts: true }) || html`<p class="opacity-75">No datasheet information in the data.</p>`}
-        </div>`;
-      })}`;
+      ${combinedDatasheetHtml(entries)}`;
   }
 }

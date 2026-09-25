@@ -240,6 +240,11 @@ test('Space Marines: imported catalogues do not duplicate configuration entries'
   const e = RosterEngine.create(sm, { name: 'SM' });
   const config = e.roster.forces[0].selections.map((s) => s.def.name).sort();
   assert.deepStrictEqual(config, ['Battle Size', 'Detachment', 'Force Disposition']);
+  // Rules on units that are not in the list (e.g. Judiciar "must be attached") must not fire.
+  assert.ok(!e.validate().some((i) => /Judiciar/.test(i.message)), JSON.stringify(e.validate()));
+  const judiciar = e.addSelection(e.roster.forces[0], e.optionTree(e.roster.forces[0]).entries.find((o) => o.def.name === 'Judiciar').def);
+  assert.ok(e.validate().some((i) => i.message === 'Judiciar must be attached to a Bodyguard unit.'), JSON.stringify(e.validate()));
+  e.removeSelection(judiciar);
   const force = e.roster.forces[0];
   const tac = e.addSelection(force, e.optionTree(force).entries.find((o) => o.def.name === 'Tactical Squad').def);
   assert.strictEqual(e.modelCount(tac), 10);
