@@ -5,6 +5,11 @@ import { store } from './store.js';
 import { toast, download, copyText } from './toast.js';
 import { VirtualSelection } from '../engine/roster.js';
 import { datasheetHtml } from './datasheet.js';
+import { toBattleScribeXml } from '../engine/battlescribe-export.js';
+import { getYellowscribeCode, YELLOWSCRIBE_URL } from '../data/yellowscribe.js';
+
+const YS_MOD_URL = 'https://steamcommunity.com/sharedfiles/filedetails/?id=2920625970';
+const safeFileName = (s) => String(s || 'roster').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'roster';
 
 const MAX_DEPTH = 4;
 
@@ -160,6 +165,9 @@ export class Editor {
               <li><button class="dropdown-item" data-act="${this.actions.add(() => this.copyList())}"><i class="bi bi-clipboard"></i> Copy as text</button></li>
               <li><button class="dropdown-item" data-act="${this.actions.add(() => download(`${r.name}.txt`, e.toText()))}"><i class="bi bi-file-text"></i> Download text</button></li>
               <li><button class="dropdown-item" data-act="${this.actions.add(() => download(`${r.name}.json`, JSON.stringify(e.toJSON(), null, 2), 'application/json'))}"><i class="bi bi-filetype-json"></i> Download JSON</button></li>
+              <li><button class="dropdown-item" data-act="${this.actions.add(() => this.downloadRos())}"><i class="bi bi-filetype-xml"></i> Download BattleScribe roster (.ros)</button></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><button class="dropdown-item" data-act="${this.actions.add(() => this.yellowscribe())}"><i class="bi bi-controller"></i> Get Yellowscribe code (TTS)</button></li>
               <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item" data-act="${this.actions.add(() => this.print())}"><i class="bi bi-printer"></i> Print datasheets</button></li>
             </ul>
@@ -180,6 +188,57 @@ export class Editor {
   findTop(id) {
     const sel = this.engine.findSelection(id);
     return sel ? sel.rootEntry : null;
+  }
+
+  /** BattleScribe roster file: opens in BattleScribe / New Recruit and uploads to Yellowscribe. */
+  downloadRos() {
+    download(`${safeFileName(this.engine.roster.name)}.ros`, toBattleScribeXml(this.engine), 'application/xml');
+  }
+
+  /** Upload the roster to Yellowscribe (via the configured CORS proxy) and show the TTS code. */
+  async yellowscribe() {
+    const el = document.getElementById('ys-modal');
+    const body = el.querySelector('#ys-body');
+    const modal = bootstrap.Modal.getOrCreateInstance(el);
+    const errors = this.engine.validate().filter((i) => i.level === 'error').length;
+    const xml = toBattleScribeXml(this.engine);
+    const warning = errors ? html`<div class="alert alert-warning py-2 px-3 small mb-3"><i class="bi bi-exclamation-triangle me-1"></i>
+      This roster has ${errors} issue${errors === 1 ? '' : 's'}. Yellowscribe will still accept it.</div>` : '';
+    body.innerHTML = String(html`${warning}<div class="d-flex align-items-center gap-3 py-3">
+      <div class="spinner-border text-primary" role="status" aria-hidden="true"></div><span>Sending your roster to Yellowscribe…</span></div>`);
+    modal.show();
+
+    try {
+      const code = await getYellowscribeCode(xml, store.settings().ysProxy);
+      body.innerHTML = String(html`${warning}
+        <label class="form-label fw-semibold text-primary" for="ys-code">Your code</label>
+        <div class="input-group input-group-lg mb-3">
+          <input class="form-control text-center font-monospace fw-bold" id="ys-code" value="${code}" readonly>
+          <button class="btn btn-success" type="button" id="ys-copy"><i class="bi bi-clipboard me-1"></i>Copy</button>
+        </div>
+        <p class="mb-1">Paste it into the <a href="${YS_MOD_URL}" class="link-light" target="_blank" rel="noopener">Yellowscribe v2 mod</a> in Tabletop Simulator.</p>
+        <p class="small opacity-75 mb-0">The code is valid for about 10 minutes. Get a new one if it expires.</p>`);
+      const input = body.querySelector('#ys-code');
+      input.addEventListener('focus', () => input.select());
+      body.querySelector('#ys-copy').addEventListener('click', async () => {
+        const ok = await copyText(code);
+        toast(ok ? 'Yellowscribe code copied' : 'Copy failed', ok ? 'success' : 'danger');
+      });
+    } catch (err) {
+      body.innerHTML = String(html`${warning}
+        <div class="alert alert-danger py-2 px-3 small mb-3"><i class="bi bi-x-octagon me-1"></i>${err.message}</div>
+        <p class="mb-2">You can still get a code by uploading the roster on Yellowscribe yourself:</p>
+        <ol class="small mb-3">
+          <li>Download the roster file (.ros).</li>
+          <li>Open Yellowscribe, choose <strong>Upload</strong>, and select the file.</li>
+          <li>Copy the code it gives you into the mod in Tabletop Simulator.</li>
+        </ol>
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-success" type="button" id="ys-download"><i class="bi bi-download me-1"></i>Download .ros</button>
+          <a class="btn btn-outline-light" href="${YELLOWSCRIBE_URL}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right me-1"></i>Open Yellowscribe</a>
+        </div>`);
+      body.querySelector('#ys-download').addEventListener('click', () => this.downloadRos());
+    }
   }
 
   async copyList() {

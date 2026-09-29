@@ -5,6 +5,7 @@ import assert from 'assert';
 import { fileURLToPath } from 'url';
 import { GameData } from '../js/engine/gamedata.js';
 import { RosterEngine } from '../js/engine/engine.js';
+import { toBattleScribeXml } from '../js/engine/battlescribe-export.js';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const load = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
@@ -211,6 +212,29 @@ test('leaders attach to eligible units and are validated', () => {
   assert.ok(e2.roster.forces[0].selections.every((s) => !(s.attachments || []).length));
 });
 
+test('BattleScribe .ros export has what Yellowscribe reads', () => {
+  const e = setup();
+  const force = e.roster.forces[0];
+  e.addSelection(force, unitDef(e, 'Overlord'));
+  const w = e.addSelection(force, unitDef(e, 'Necron Warriors'));
+  e.setNumber(w.children.find((c) => c.def.type === 'model'), 20);
+  const xml = toBattleScribeXml(e);
+  assert.match(xml, /^<\?xml version="1\.0"/);
+  assert.match(xml, new RegExp(`<roster [^>]*gameSystemId="${gs.id}"`));
+  // Units are top-level unit/model selections with their keywords as categories.
+  assert.match(xml, /<selection [^>]*name="Necron Warriors"[^>]*type="unit"/);
+  assert.match(xml, /<selection [^>]*name="Overlord"[^>]*type="model"/);
+  assert.match(xml, /<category [^>]*name="Battleline"[^>]*primary="true"/);
+  // Numbers are totals: 20 models, each with a gauss flayer -> 20.
+  assert.match(xml, /<selection [^>]*name="Warrior w\/ gauss flayer"[^>]*number="20"/);
+  assert.match(xml, /<selection [^>]*name="Gauss flayer"[^>]*number="20"/);
+  // Profiles and rules sit on the selection that grants them.
+  assert.match(xml, /<profile [^>]*name="Gauss flayer"[^>]*typeName="Ranged Weapons"/);
+  assert.match(xml, /<characteristic name="Keywords"[^>]*>Lethal Hits, Rapid Fire 1<\/characteristic>/);
+  assert.match(xml, /<rule [^>]*name="Reanimation Protocols"[^>]*>\s*<description>/);
+  assert.match(xml, /<cost name="pts" typeId="[^"]+" value="190"\/>/);
+});
+
 test('JSON round trip preserves the roster', () => {
   const e = setup();
   const force = e.roster.forces[0];
@@ -248,6 +272,10 @@ test('Space Marines: imported catalogues do not duplicate configuration entries'
   const force = e.roster.forces[0];
   const tac = e.addSelection(force, e.optionTree(force).entries.find((o) => o.def.name === 'Tactical Squad').def);
   assert.strictEqual(e.modelCount(tac), 10);
+  // Mandatory Sergeant counts towards the squad's minimum size (5, not 5 + Sergeant).
+  const term = e.addSelection(force, e.optionTree(force).entries.find((o) => o.def.name === 'Terminator Squad').def);
+  assert.strictEqual(e.modelCount(term), 5);
+  assert.strictEqual(e.issuesFor(term).length, 0, JSON.stringify(e.issuesFor(term)));
   assert.ok(e.points(tac) > 0);
   assert.strictEqual(e.issuesFor(tac).length, 0, JSON.stringify(e.issuesFor(tac)));
 });

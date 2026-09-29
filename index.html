@@ -91,6 +91,13 @@
                     <label class="form-label small fw-semibold text-primary" for="set-local">Or use local files (a clone of the repository)</label>
                     <input class="form-control form-control-sm" type="file" id="set-local" accept=".json" multiple>
                     <div class="form-text">Select every <code>.json</code> file from the repository. Local files are used for this session only.</div>
+                    <hr>
+                    <label class="form-label small fw-semibold text-primary" for="set-ys-proxy">Yellowscribe proxy (Tabletop Simulator export)</label>
+                    <input class="form-control form-control-sm" id="set-ys-proxy" placeholder="https://proxy.corsfix.com/?{url}">
+                    <div class="form-text">Yellowscribe only returns codes to web pages through a CORS proxy. The default,
+                        <a href="https://corsfix.com" target="_blank" rel="noopener">Corsfix</a>, is free: it works on localhost as-is, and for a
+                        live site register its domain in your Corsfix account. <code>{url}</code> is replaced with the Yellowscribe address
+                        (<code>{encodedUrl}</code> for an encoded one). Leave empty to download the roster and upload it on Yellowscribe instead.</div>
                 </div>
                 <div class="modal-footer justify-content-between">
                     <button type="button" class="btn btn-sm btn-outline-danger" id="btn-clear-cache"><i class="bi bi-trash me-1"></i>Clear cached data</button>
@@ -100,6 +107,25 @@
                     </div>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- YELLOWSCRIBE (TABLETOP SIMULATOR) MODAL -->
+    <div class="modal fade" id="ys-modal" tabindex="-1" aria-labelledby="ys-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border">
+                <div class="modal-header bg-primary text-white">
+                    <div>
+                        <h5 class="modal-title fw-bold" id="ys-title"><i class="bi bi-controller me-2"></i>Yellowscribe Code</h5>
+                        <small class="opacity-75">For the Yellowscribe mod in Tabletop Simulator</small>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4" id="ys-body"></div>
+                <div class="modal-footer" id="ys-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
         </div>
     </div>
 

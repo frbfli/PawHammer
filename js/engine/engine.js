@@ -811,6 +811,9 @@ export class RosterEngine {
     }
     for (const g of tree.groups) {
       if (g.hidden) continue;
+      // Mandatory members first (e.g. a squad's Sergeant), so they count towards the group's
+      // minimum before it is topped up with the default choice.
+      if (this._autofillStep(parent, { entries: g.entries, groups: g.groups }, depth)) return true;
       if (g.min > g.count) {
         const visible = this._visibleGroupEntries(g);
         let pick = null;
@@ -826,7 +829,6 @@ export class RosterEngine {
           }
         }
       }
-      if (this._autofillStep(parent, { entries: g.entries, groups: g.groups }, depth)) return true;
     }
     return false;
   }
@@ -1035,7 +1037,7 @@ export class RosterEngine {
    * Profiles and rules for a selection and all its descendants (deduplicated).
    * Each profile has a `count`: how many copies the unit carries (e.g. 10 models × 1 bolt pistol).
    */
-  describe(sel) {
+  describe(sel, { deep = true } = {}) {
     const profiles = [];
     const rules = [];
     const pSeen = new Map();
@@ -1080,7 +1082,7 @@ export class RosterEngine {
       const d = s.def;
       mult = m;
       collectInfo({ profiles: d.profiles, rules: d.rules, infoLinks: d.infoLinks, infoGroups: d.infoGroups }, s);
-      for (const c of s.children) visit(c, m * c.number);
+      if (deep) for (const c of s.children) visit(c, m * c.number);
     };
     visit(sel, 1);
     const st = this.evaluate(sel);

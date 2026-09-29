@@ -32,11 +32,29 @@ Any static file server works; ES modules just need to be served over HTTP, not o
 - **Play Mode**: a read-only view for the table. Each unit shows with its attached characters, and
   tapping one opens its datacard with equipped weapon counts, abilities, Warlord and enhancements,
   plus the detachment rules.
-- Rosters auto-save to browser storage. You can export them as text or JSON, re-import them,
-  and print them as datasheets.
+- Rosters auto-save to browser storage. You can export them as text, JSON or a BattleScribe
+  roster (`.ros`, which also opens in New Recruit), re-import them, and print them as datasheets.
+- **Tabletop Simulator:** Export → *Get Yellowscribe code* uploads the roster to
+  [Yellowscribe](https://yellowscribe.link) and shows the code for the Yellowscribe v2 mod.
 - Data files are cached in IndexedDB and re-downloaded only when the repository changes.
 - A different repo or branch, or a local copy of the JSON files, can be selected under **Data**.
 - Dark and light themes, and a responsive layout.
+
+## Yellowscribe setup
+
+Yellowscribe's server doesn't send CORS headers, so a web page can only read the code it
+returns through a CORS proxy. The proxy URL is set under **Data Source** and defaults to
+[Corsfix](https://corsfix.com) (`https://proxy.corsfix.com/?{url}`):
+
+- **Running locally** (`npm start`): works as-is. Corsfix allows localhost without an account.
+- **Live site** (e.g. GitHub Pages): create a free Corsfix account and add the site's domain
+  (for example `frbfli.github.io`). The free plan allows 60 requests per minute and 100 MB a month.
+
+Other proxies work too. `{url}` is replaced with the Yellowscribe address, and `{encodedUrl}`
+with a URL-encoded one. For corsproxy.io, for example: `https://corsproxy.io/?key=YOUR_KEY&url={encodedUrl}`.
+
+If the proxy is empty or fails, the dialog offers to download the `.ros` file and open
+Yellowscribe, so you can upload the file there yourself.
 
 ## Architecture
 

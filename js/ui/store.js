@@ -1,6 +1,7 @@
 // Browser persistence for rosters and settings (localStorage).
 
 import { DEFAULT_SOURCE } from '../data/repository.js';
+import { DEFAULT_YS_PROXY } from '../data/yellowscribe.js';
 
 const ROSTERS = 'pawhammer:rosters';
 const SETTINGS = 'pawhammer:settings';
@@ -39,7 +40,7 @@ export const store = {
     write(ROSTERS, all);
   },
   settings() {
-    return { source: { ...DEFAULT_SOURCE }, theme: 'dark', ...read(SETTINGS, {}) };
+    return { source: { ...DEFAULT_SOURCE }, theme: 'dark', ysProxy: DEFAULT_YS_PROXY, ...read(SETTINGS, {}) };
   },
   saveSettings(patch) { write(SETTINGS, { ...this.settings(), ...patch }); },
 };

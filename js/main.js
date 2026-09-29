@@ -64,6 +64,7 @@ class App {
     document.getElementById('btn-settings').addEventListener('click', (ev) => {
       ev.preventDefault();
       fill(store.settings().source);
+      settingsEl.querySelector('#set-ys-proxy').value = store.settings().ysProxy;
       settingsEl.querySelector('#set-local').value = '';
       settingsModal.show();
     });
@@ -79,6 +80,7 @@ class App {
     });
     document.getElementById('settings-form').addEventListener('submit', (ev) => {
       ev.preventDefault();
+      store.saveSettings({ ysProxy: settingsEl.querySelector('#set-ys-proxy').value.trim() });
       const files = settingsEl.querySelector('#set-local').files;
       if (files && files.length) {
         this.localSource = new LocalSource(files);
