@@ -478,6 +478,16 @@ export class Editor {
     return parts;
   }
 
+  /** Make `unit` the Warlord (null clears it), explaining why when that isn't allowed. */
+  chooseWarlord(unit) {
+    try {
+      this.engine.setWarlord(this.force, unit);
+    } catch (err) {
+      toast(err.message, 'warning');
+      this.render(); // put the control back the way it was
+    }
+  }
+
   removeUnit(s) {
     const name = this.engine.displayName(s);
     if (this.selectedId === s.id) this.selectedId = null;
@@ -613,11 +623,18 @@ export class Editor {
     const id = 'o' + parent.id + opt.def.key;
     const invalid = opt.count < opt.min || opt.count > opt.max;
     let control;
+    const wl = e.warlordOption(parent);
+    const isWarlordOpt = !!wl && wl.def === opt.def;
     if (opt.max === 1 && opt.min <= 1) {
+      // The Warlord switch goes through setWarlord so only one model in the army is the Warlord.
+      const onChange = isWarlordOpt
+        ? (ev) => this.chooseWarlord(ev.target.checked ? parent : null)
+        : (ev) => e.setOptionCount(parent, opt.def, opt.groupPath, ev.target.checked ? 1 : 0);
       control = html`<div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" id="${id}" aria-label="${opt.state.name}" ${opt.count > 0 ? 'checked' : ''} ${opt.min === 1 && opt.count === 1 ? 'disabled' : ''}
-          data-act="${this.actions.add((ev) => e.setOptionCount(parent, opt.def, opt.groupPath, ev.target.checked ? 1 : 0))}">
+          data-act="${this.actions.add(onChange)}">
         ${this.optionName(parent, opt, id, invalid ? 'text-danger' : '')}
+        ${isWarlordOpt && opt.min >= 1 ? html`<span class="limit-hint ms-1">(must be your Warlord)</span>` : ''}
       </div>`;
     } else {
       control = html`<span class="opt-name ${invalid ? 'text-danger' : ''}">${opt.state.name}

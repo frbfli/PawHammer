@@ -4,7 +4,9 @@ import { Repository, GitHubSource, LocalSource, DEFAULT_SOURCE } from './data/re
 import { cacheClear } from './data/cache.js';
 import { RosterEngine } from './engine/engine.js';
 import { store } from './ui/store.js';
-import { html } from './ui/html.js';
+import { html, fmtPts } from './ui/html.js';
+import { parseGwAppText } from './import/gw-app-text.js';
+import { importList } from './import/importer.js';
 import { renderHome, openNewRoster } from './ui/home.js';
 import { Editor } from './ui/editor.js';
 import { PlayView } from './ui/play.js';
@@ -113,6 +115,42 @@ class App {
     });
   }
 
+  /** Build a roster from a pasted app export, save it, open it and show what was matched. */
+  async importFromText(text, catalogueId) {
+    this.showLoading('Preparing data…');
+    try {
+      const data = await this.loadGameData(catalogueId, (msg) => this.showLoading(msg));
+      this.showLoading('Importing your list…');
+      await new Promise((r) => setTimeout(r, 0)); // let the loading message paint
+      const { engine, report } = importList(data, parseGwAppText(text));
+      store.saveRoster(engine.toJSON());
+      this.pendingImportReport = { id: engine.roster.id, report };
+      location.hash = '#/roster/' + engine.roster.id;
+    } catch (err) {
+      this.showError(err);
+    }
+  }
+
+  showImportReport(report) {
+    const units = report.units;
+    const skipped = units.filter((u) => u.notes.some((n) => /skipped/.test(n)));
+    const unmatched = units.filter((u) => u.notes.some((n) => !/pts in the data/.test(n)) && !skipped.includes(u));
+    const repriced = units.filter((u) => u.notes.some((n) => /pts in the data/.test(n)));
+    const exact = units.length - skipped.length - unmatched.length;
+    const body = document.getElementById('import-report-body');
+    body.innerHTML = String(html`
+      <p class="mb-3"><strong>${units.length - skipped.length}</strong> of ${units.length} units imported${exact === units.length ? ', all matching the list.' : '.'}
+        List total <strong>${fmtPts(report.listedPoints)} pts</strong>; with the current data it's <strong>${fmtPts(report.importedPoints)} pts</strong>.</p>
+      ${report.warnings.map((w) => html`<div class="alert alert-warning py-2 px-3 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>${w}</div>`)}
+      ${skipped.length ? html`<h6 class="fw-bold text-danger mt-3">Not imported</h6>
+        <ul class="small">${skipped.map((u) => html`<li><strong>${u.name}</strong>: ${u.notes.join(' ')}</li>`)}</ul>` : ''}
+      ${unmatched.length ? html`<h6 class="fw-bold text-warning mt-3">Check these units</h6>
+        <ul class="small">${unmatched.map((u) => html`<li><strong>${u.name}</strong>: ${u.notes.filter((n) => !/pts in the data/.test(n)).join(' ')}</li>`)}</ul>` : ''}
+      ${repriced.length ? html`<h6 class="fw-bold text-primary mt-3">Points changed since the list was exported</h6>
+        <ul class="small mb-0">${repriced.map((u) => html`<li>${u.name}: ${fmtPts(u.listedPoints)} → ${fmtPts(u.importedPoints)} pts</li>`)}</ul>` : ''}`);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('import-report-modal')).show();
+  }
+
   async createRoster(catalogueId, name, pointsLimit) {
     this.showLoading('Preparing data…');
     try {
@@ -163,6 +201,11 @@ class App {
       document.title = `${play ? 'Play: ' : ''}${engine.roster.name} — PawHammer`;
       this.root.innerHTML = '';
       this.view = play ? new PlayView(this, engine) : new Editor(this, engine);
+      if (this.pendingImportReport && this.pendingImportReport.id === engine.roster.id) {
+        const { report } = this.pendingImportReport;
+        this.pendingImportReport = null;
+        this.showImportReport(report);
+      }
     } catch (err) {
       this.showError(err);
     }

@@ -34,6 +34,10 @@ Any static file server works; ES modules just need to be served over HTTP, not o
   plus the detachment rules.
 - Rosters auto-save to browser storage. You can export them as text, JSON or a BattleScribe
   roster (`.ros`, which also opens in New Recruit), re-import them, and print them as datasheets.
+- **Import from text:** paste a list exported from the official Warhammer 40,000 app. The importer
+  sets Battle Size, Detachment and Force Disposition, and picks the model variants and wargear
+  that match the listed weapons. It also sets enhancements, the Warlord and Leader/Support
+  attachments, then reports anything it couldn't match and any points that changed since the export.
 - **Tabletop Simulator:** Export → *Get Yellowscribe code* uploads the roster to
   [Yellowscribe](https://yellowscribe.link) and shows the code for the Yellowscribe v2 mod.
 - Data files are cached in IndexedDB and re-downloaded only when the repository changes.

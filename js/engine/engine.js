@@ -282,6 +282,76 @@ export class RosterEngine {
       arr(m.conditionGroups).every((g) => this._checkGroup(g, self));
   }
 
+  // ---------------------------------------------------------------- Warlord
+  //
+  // Characters that can lead the army have a "Warlord" option in the Warlord category; the game
+  // system requires exactly one per roster. Some (Roboute Guilliman, Ghazghkull, …) have a
+  // minimum of 1 on that option: they must be the Warlord whenever they are in the army.
+
+  get warlordCategoryId() {
+    if (this._warlordCat === undefined) {
+      this._warlordCat = null;
+      for (const [id, c] of this.data.categories) if (c.name === 'Warlord') { this._warlordCat = id; break; }
+    }
+    return this._warlordCat;
+  }
+
+  /** The Warlord option of a top-level unit, or null when it can't be the Warlord. */
+  warlordOption(unit) {
+    const cat = this.warlordCategoryId;
+    if (!cat || !unit || !unit.parent || !unit.parent.isForce) return null;
+    const find = (branch) => {
+      for (const o of branch.entries) if (!o.hidden && o.def.categoryIds.includes(cat)) return o;
+      for (const g of branch.groups) if (!g.hidden) { const r = find(g); if (r) return r; }
+      return null;
+    };
+    return find(this.optionTree(unit));
+  }
+
+  /** The Warlord selection inside a unit, if it has one. */
+  _warlordSelection(unit) {
+    const cat = this.warlordCategoryId;
+    if (!cat) return null;
+    for (const s of this.walk(unit)) if (this.categoriesOf(s).has(cat)) return s;
+    return null;
+  }
+
+  isWarlord(unit) { return !!this._warlordSelection(unit); }
+
+  /** True for characters that must be the Warlord whenever they are in the army. */
+  mustBeWarlord(unit) {
+    const o = this.warlordOption(unit);
+    return !!o && o.min >= 1;
+  }
+
+  warlordCandidates(force) { return force.selections.filter((s) => this.warlordOption(s)); }
+
+  warlords(force) { return force.selections.filter((s) => this.isWarlord(s)); }
+
+  _removeWarlord(unit) {
+    const w = this._warlordSelection(unit);
+    if (!w) return;
+    const list = this._childrenOf(w.parent);
+    list.splice(list.indexOf(w), 1);
+    this._reset();
+  }
+
+  /**
+   * Make `unit` the army's Warlord (null clears it). Only one model can be the Warlord, so any
+   * other Warlord is replaced, unless that model must be the Warlord.
+   */
+  setWarlord(force, unit) {
+    const blocker = force.selections.find((s) => s !== unit && this.isWarlord(s) && this.mustBeWarlord(s));
+    if (blocker) throw new Error(`${this.displayName(blocker)} must be your Warlord.`);
+    if (unit && !this.warlordOption(unit)) throw new Error(`${this.displayName(unit)} can't be your Warlord.`);
+    for (const s of force.selections) if (s !== unit) this._removeWarlord(s);
+    if (unit && !this.isWarlord(unit)) {
+      const o = this.warlordOption(unit);
+      this._insert(unit, o.def, o.groupPath, 1);
+    }
+    this._changed();
+  }
+
   // ---------------------------------------------------------------- associations (leaders)
   //
   // BSData 11e describes Leader/Support attachments as `associations` on the leader's entry:
@@ -683,6 +753,10 @@ export class RosterEngine {
       n = st.defaultAmount > 0 ? st.defaultAmount : 1;
     }
     const sel = this._insert(parent, def, groupPath, n);
+    // A character that must be the Warlord (e.g. Roboute Guilliman) takes over from any other.
+    if (parent.isForce && this.mustBeWarlord(sel) && this.isWarlord(sel)) {
+      for (const other of parent.selections) if (other !== sel && !this.mustBeWarlord(other)) this._removeWarlord(other);
+    }
     this._changed();
     return sel;
   }
@@ -762,6 +836,9 @@ export class RosterEngine {
     const copy = clone(sel, sel.parent);
     const list = this._childrenOf(sel.parent);
     list.splice(list.indexOf(sel) + 1, 0, copy);
+    // Only one model can be the Warlord: the copy doesn't inherit it.
+    this._reset();
+    if (this.isWarlord(copy)) this._removeWarlord(copy);
     this._changed();
     return copy;
   }
@@ -879,7 +956,12 @@ export class RosterEngine {
   _validateForce(force, push, seen) {
     const check = (raw, key, categoryId) => {
       const st = this._evaluateRaw(raw, force, key);
-      for (const con of st.constraints) {
+      for (let con of st.constraints) {
+        if (categoryId === this.warlordCategoryId && (con.field || 'selections') === 'selections') {
+          con = { ...con, message: con.type === 'min'
+            ? 'Choose a Warlord: turn on Warlord in the options of one of your Characters.'
+            : 'Your army can only have one Warlord.' };
+        }
         this._checkConstraint(con, force, st.name, (s) => this.categoriesOf(s).has(categoryId), push, seen, true, null, categoryId);
       }
     };
@@ -930,7 +1012,10 @@ export class RosterEngine {
         for (const self of selves) {
           const st = self.virtual ? opt.state : this.evaluate(self);
           for (const con of st.constraints) {
-            this._checkConstraint(con, self, self.virtual ? opt.state.name : this.displayName(self), (s) => s.def.id === opt.def.id, push, seen, false, parentName, opt.def.id);
+            // shared: false limits count only this link (e.g. a Rhino's fixed combi-bolter and
+            // its pintle combi-bolter are two links to one entry); otherwise every link counts.
+            const match = con.shared === false ? (s) => s.def === opt.def : (s) => s.def.id === opt.def.id;
+            this._checkConstraint(con, self, self.virtual ? opt.state.name : this.displayName(self), match, push, seen, false, parentName, con.shared === false ? opt.def.key : opt.def.id);
           }
         }
       }
@@ -972,6 +1057,16 @@ export class RosterEngine {
     if (field === 'selections') {
       if (scope === 'self' && !isCategory) count = self.number;
       else count = this._countSelections(target, match, isCategory ? true : !!con.includeChildSelections || scope !== 'parent');
+    } else if (this._isCostType(field) && isCategory) {
+      // e.g. "Faction: Unaligned Forces" max 500 pts: only units with that keyword count.
+      count = 0;
+      const sum = (node) => {
+        for (const c of this._childrenOf(node)) {
+          if (match(c)) count += this.totalCost(c, field);
+          else sum(c);
+        }
+      };
+      sum(target);
     } else if (this._isCostType(field) || field === 'associations') {
       count = this._count(target, { field, childId: con.childId || 'any' });
     } else {

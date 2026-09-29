@@ -3,6 +3,8 @@
 import { html, fmtPts } from './html.js';
 import { store } from './store.js';
 import { toast, download } from './toast.js';
+import { parseGwAppText } from '../import/gw-app-text.js';
+import { norm } from '../import/importer.js';
 
 function factionGroup(name) {
   const m = /^([^-]+?)\s+-\s+/.exec(name);
@@ -55,8 +57,9 @@ export function renderHome(app) {
             from the community-maintained <a href="https://github.com/${app.repo.source.owner || 'BSData'}/${app.repo.source.repo || ''}" class="link-light" target="_blank" rel="noopener">BSData</a> repository.</p>
           <div class="d-grid gap-2 mb-4">
             <button class="btn btn-success" id="btn-new"><i class="bi bi-plus-lg me-1"></i>New Roster</button>
+            <button class="btn btn-outline-light" id="btn-text-import"><i class="bi bi-clipboard-plus me-1"></i>Import from Text</button>
             <label class="btn btn-outline-light mb-0">
-              <i class="bi bi-upload me-1"></i>Import Roster
+              <i class="bi bi-upload me-1"></i>Import Roster File
               <input type="file" accept=".json,application/json" id="import-file" hidden>
             </label>
           </div>
@@ -68,6 +71,7 @@ export function renderHome(app) {
     </div>`);
 
   root.querySelector('#btn-new').addEventListener('click', () => openNewRoster(app));
+  root.querySelector('#btn-text-import').addEventListener('click', () => openTextImport(app));
   root.querySelector('#import-file').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
     if (!file) return;
@@ -135,6 +139,70 @@ async function showDataStatus(app) {
     const retry = document.getElementById('btn-retry');
     if (retry) retry.addEventListener('click', () => { app.resetRepository(); renderHome(app); });
   }
+}
+
+/** Faction catalogue for a faction name from a text list, e.g. "Chaos Space Marines". */
+export function matchFaction(factions, name) {
+  const n = norm(name);
+  if (!n) return null;
+  const tail = (f) => norm(f.name.replace(/^.*\s-\s/, ''));
+  return factions.find((f) => norm(f.name) === n) ||
+    factions.find((f) => tail(f) === n) ||
+    factions.find((f) => norm(f.name).endsWith(' ' + n)) || null;
+}
+
+/** "Import from Text": paste an app export, confirm the faction, then import. */
+export async function openTextImport(app) {
+  const modalEl = document.getElementById('text-import-modal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  const textEl = modalEl.querySelector('#text-import-text');
+  const select = modalEl.querySelector('#text-import-faction');
+  const detected = modalEl.querySelector('#text-import-detected');
+  const submit = modalEl.querySelector('[type=submit]');
+  textEl.value = '';
+  detected.innerHTML = '';
+  select.innerHTML = '<option value="">Loading factions…</option>';
+  select.disabled = true;
+  submit.disabled = true;
+  modal.show();
+
+  let factions = [];
+  try {
+    const gs = (await app.repo.gameSystems())[0];
+    factions = await app.repo.factions(gs && gs.id);
+    select.innerHTML = String(html`<option value="">Choose a faction…</option>
+      ${factions.map((f) => html`<option value="${f.id}">${f.name}</option>`)}`);
+    select.disabled = false;
+  } catch (err) {
+    select.innerHTML = String(html`<option value="">${err.message}</option>`);
+  }
+
+  const update = () => {
+    const list = parseGwAppText(textEl.value);
+    const ok = list.units.length > 0;
+    submit.disabled = !ok || !select.value;
+    if (!textEl.value.trim()) { detected.innerHTML = ''; return; }
+    if (!ok) {
+      detected.innerHTML = String(html`<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>No units found. Paste the whole export, including lines like "Unit Name (100 Points)".</span>`);
+      return;
+    }
+    const f = matchFaction(factions, list.faction);
+    if (f && !select.dataset.touched) select.value = f.id;
+    submit.disabled = !select.value;
+    detected.innerHTML = String(html`<span class="text-success"><i class="bi bi-check-circle me-1"></i>
+      ${list.name || 'List'}: ${list.faction || 'unknown faction'}${list.detachments.length ? ` • ${list.detachments.map((d) => d.name).join(', ')}` : ''}
+      • ${list.units.length} unit${list.units.length === 1 ? '' : 's'} • ${fmtPts(list.units.reduce((n, u) => n + u.points, 0))} pts</span>
+      ${!f && list.faction ? html`<div class="text-warning">Couldn't match "${list.faction}" to a faction, so please choose it below.</div>` : ''}`);
+  };
+  textEl.oninput = update;
+  select.onchange = () => { select.dataset.touched = '1'; update(); };
+  delete select.dataset.touched;
+  modalEl.querySelector('#text-import-form').onsubmit = (ev) => {
+    ev.preventDefault();
+    if (!select.value) return;
+    modal.hide();
+    app.importFromText(textEl.value, select.value);
+  };
 }
 
 export async function openNewRoster(app) {

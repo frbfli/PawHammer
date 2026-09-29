@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url';
 import { GameData } from '../js/engine/gamedata.js';
 import { RosterEngine } from '../js/engine/engine.js';
 import { toBattleScribeXml } from '../js/engine/battlescribe-export.js';
+import { parseGwAppText } from '../js/import/gw-app-text.js';
+import { importList } from '../js/import/importer.js';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const load = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
@@ -233,6 +235,92 @@ test('BattleScribe .ros export has what Yellowscribe reads', () => {
   assert.match(xml, /<characteristic name="Keywords"[^>]*>Lethal Hits, Rapid Fire 1<\/characteristic>/);
   assert.match(xml, /<rule [^>]*name="Reanimation Protocols"[^>]*>\s*<description>/);
   assert.match(xml, /<cost name="pts" typeId="[^"]+" value="190"\/>/);
+});
+
+test('only one Warlord: choosing one replaces the other, duplicates are not Warlord', () => {
+  const e = setup();
+  const force = e.roster.forces[0];
+  const ov1 = e.addSelection(force, unitDef(e, 'Overlord'));
+  const ov2 = e.addSelection(force, unitDef(e, 'Overlord'));
+  const warriors = e.addSelection(force, unitDef(e, 'Necron Warriors'));
+  assert.ok(e.validate().some((i) => /Choose a Warlord/.test(i.message)));
+  assert.deepStrictEqual(e.warlordCandidates(force), [ov1, ov2]);
+  assert.ok(!e.warlordOption(warriors), 'non-characters cannot be Warlord');
+  e.setWarlord(force, ov1);
+  assert.deepStrictEqual(e.warlords(force), [ov1]);
+  e.setWarlord(force, ov2);
+  assert.deepStrictEqual(e.warlords(force), [ov2]);
+  const copy = e.duplicate(ov2);
+  assert.ok(!e.isWarlord(copy), 'a duplicated Warlord is not also the Warlord');
+  assert.ok(!e.validate().some((i) => /Warlord/.test(i.message)), JSON.stringify(e.validate()));
+});
+
+test('must-be-Warlord characters are selected automatically and cannot be replaced', () => {
+  const e = setup();
+  const force = e.roster.forces[0];
+  const ov = e.addSelection(force, unitDef(e, 'Overlord'));
+  e.setWarlord(force, ov);
+  const king = e.addSelection(force, unitDef(e, 'The Silent King'));
+  assert.ok(e.mustBeWarlord(king));
+  assert.deepStrictEqual(e.warlords(force), [king], 'the Silent King takes over as Warlord');
+  assert.throws(() => e.setWarlord(force, ov), /The Silent King must be your Warlord/);
+  assert.ok(!e.validate().some((i) => /Warlord/.test(i.message)), JSON.stringify(e.validate()));
+
+  // Guilliman (min 1 on the Warlord option) and Ghazghkull (min raised to 1 by a modifier).
+  for (const [cat, name, extra] of [['Imperium - Ultramarines', 'Roboute Guilliman', 'Captain'], ['Orks', 'Ghazghkull Thraka', 'Warboss']]) {
+    const files = cat === 'Orks' ? ['Orks', 'Unaligned Forces']
+      : [cat, 'Imperium - Space Marines', 'Imperium - Agents of the Imperium', 'Library - Titans', 'Imperium - Imperial Knights - Library', 'Library - Astartes Heresy Legends', 'Unaligned Forces'];
+    const cats = files.map((n) => load(n + '.json').catalogue);
+    const e2 = RosterEngine.create(new GameData(gs, cats, cats[0].id), {});
+    const f2 = e2.roster.forces[0];
+    const pick = (n) => e2.addSelection(f2, e2.optionTree(f2).entries.find((o) => o.def.name === n).def);
+    const other = pick(extra);
+    e2.setWarlord(f2, other);
+    const hero = pick(name);
+    assert.deepStrictEqual(e2.warlords(f2), [hero], `${name} becomes the Warlord`);
+    assert.ok(!e2.validate().some((i) => /Warlord/.test(i.message)), JSON.stringify(e2.validate()));
+  }
+});
+
+test('Warhammer app text export: parse and import (Chaos Space Marines)', () => {
+  const text = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'samples', 'gw-app-csm.txt'), 'utf8');
+  const list = parseGwAppText(text);
+  assert.strictEqual(list.name, 'August RTT');
+  assert.strictEqual(list.faction, 'Chaos Space Marines');
+  assert.deepStrictEqual(list.detachments, [{ name: 'Renegade Raiders', dp: 3 }]);
+  assert.strictEqual(list.forceDisposition, 'Reconnaissance');
+  assert.deepStrictEqual(list.battleSize, { name: 'Strike Force', points: 2000 });
+  assert.strictEqual(list.units.length, 17);
+  assert.strictEqual(list.units.reduce((n, u) => n + u.points, 0), 2000);
+
+  const names = ['Chaos - Chaos Space Marines', 'Chaos - Chaos Knights Library', 'Chaos - Chaos Daemons Library', 'Library - Astartes Heresy Legends', 'Library - Titans', 'Unaligned Forces'];
+  const cats = names.map((n) => load(n + '.json').catalogue);
+  const { engine: e, report } = importList(new GameData(gs, cats, cats[0].id), list);
+  const force = e.roster.forces[0];
+  assert.deepStrictEqual(report.warnings, []);
+  assert.strictEqual(force.selections.filter((s) => s.def.type !== 'upgrade').length, 17);
+  // Nothing unmatched; the only notes are points that changed since the list was exported.
+  for (const u of report.units) {
+    assert.deepStrictEqual(u.notes.filter((n) => !/pts in the data/.test(n)), [], `${u.name}: ${u.notes.join(' ')}`);
+  }
+  const unit = (n) => force.selections.find((s) => s.def.name === n);
+  const models = (s) => Object.fromEntries(s.children.filter((c) => c.def.type === 'model').map((c) => [c.def.name, c.number]));
+  assert.deepStrictEqual(models(unit('Legionaries')), { 'Aspiring Champion': 1, 'Legionary w/ chainsword': 3, 'Legionary w/ heavy melee weapon': 1 });
+  assert.deepStrictEqual(models(unit('Chosen')), {
+    'Chosen Champion': 1, 'Chosen w/ combi-weapon and bolt pistol': 2,
+    'Chosen w/ paired accursed weapons and bolt pistol': 1, 'Chosen w/ power fist and bolt pistol': 1,
+  });
+  assert.deepStrictEqual(e.warlords(force).map((s) => s.def.name), ['Huron Blackheart']);
+  assert.deepStrictEqual(e.leadersOf(unit('Chosen')).map((s) => s.def.name).sort(), ['Huron Blackheart', 'Masters of the Maelstrom']);
+  const issues = e.validate().filter((i) => i.level === 'error').map((i) => i.message);
+  assert.deepStrictEqual(issues.filter((m) => !/over the pts limit/.test(m)), []);
+});
+
+test('ally points limits only count units with that faction keyword', () => {
+  const e = setup();
+  const force = e.roster.forces[0];
+  for (let i = 0; i < 3; i++) e.addSelection(force, unitDef(e, 'Monolith'));
+  assert.ok(!e.validate().some((i) => /Unaligned Forces pts/.test(i.message)), JSON.stringify(e.validate()));
 });
 
 test('JSON round trip preserves the roster', () => {

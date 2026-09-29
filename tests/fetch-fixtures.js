@@ -10,6 +10,8 @@ const files = [
   'Warhammer 40,000.json', 'Necrons.json', 'Unaligned Forces.json',
   'Imperium - Space Marines.json', 'Imperium - Agents of the Imperium.json', 'Library - Titans.json',
   'Imperium - Imperial Knights - Library.json', 'Library - Astartes Heresy Legends.json',
+  'Imperium - Ultramarines.json', 'Orks.json',
+  'Chaos - Chaos Space Marines.json', 'Chaos - Chaos Knights Library.json', 'Chaos - Chaos Daemons Library.json',
 ];
 
 function get(url) {
