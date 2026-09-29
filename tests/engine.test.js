@@ -314,6 +314,36 @@ test('Warhammer app text export: parse and import (Chaos Space Marines)', () => 
   assert.deepStrictEqual(e.leadersOf(unit('Chosen')).map((s) => s.def.name).sort(), ['Huron Blackheart', 'Masters of the Maelstrom']);
   const issues = e.validate().filter((i) => i.level === 'error').map((i) => i.message);
   assert.deepStrictEqual(issues.filter((m) => !/over the pts limit/.test(m)), []);
+
+  // The imported 17-unit list also survives a share code round trip exactly.
+  const e2 = RosterEngine.fromShare(e.data, JSON.parse(JSON.stringify(e.toShare())));
+  assert.deepStrictEqual(e2.loadWarnings, []);
+  assert.strictEqual(e2.toText(), e.toText());
+});
+
+test('share codes: compact form rebuilds the exact roster', () => {
+  // Necrons with a Warlord, a leader + support attachment and a custom unit size.
+  const e = setup();
+  const force = e.roster.forces[0];
+  const ov = e.addSelection(force, unitDef(e, 'Overlord'));
+  const tech = e.addSelection(force, unitDef(e, 'Technomancer'));
+  const w = e.addSelection(force, unitDef(e, 'Necron Warriors'));
+  e.setNumber(w.children.find((c) => c.def.type === 'model'), 20);
+  e.setWarlord(force, ov);
+  e.attach(ov, e.associationDefs(ov)[0].id, w);
+  e.attach(tech, e.associationDefs(tech)[0].id, w);
+  e.rename(w, 'The Silent Tide');
+  const payload = JSON.parse(JSON.stringify(e.toShare()));
+  assert.ok(JSON.stringify(payload).length < 600, 'compact: ' + JSON.stringify(payload).length);
+  const e2 = RosterEngine.fromShare(data, payload);
+  assert.deepStrictEqual(e2.loadWarnings, []);
+  assert.strictEqual(e2.toText(), e.toText());
+  const f2 = e2.roster.forces[0];
+  const w2 = f2.selections.find((s) => s.def.name === 'Necron Warriors');
+  assert.strictEqual(e2.displayName(w2), 'The Silent Tide');
+  assert.deepStrictEqual(e2.leadersOf(w2).map((s) => s.def.name).sort(), ['Overlord', 'Technomancer']);
+  assert.deepStrictEqual(e2.warlords(f2).map((s) => s.def.name), ['Overlord']);
+  assert.deepStrictEqual(e2.validate(), e.validate().map((i) => ({ ...i, selectionId: i.selectionId && e2.validate().find((j) => j.message === i.message).selectionId })));
 });
 
 test('ally points limits only count units with that faction keyword', () => {

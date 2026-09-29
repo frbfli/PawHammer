@@ -1271,6 +1271,120 @@ export class RosterEngine {
     return engine;
   }
 
+  // ---------------------------------------------------------------- sharing (compact form)
+  //
+  // Small enough for a QR code: only what auto-selection can't rebuild is stored. A selection is
+  // `key` or [key, number, children, customName, attachments]; `children` is 0 when they are
+  // exactly what adding the selection produces by default, otherwise an explicit list.
+  // Attachments point at other top-level units by their index in the force.
+
+  _shape(sel) {
+    return [sel.def.key, sel.number, sel.children.map((c) => this._shape(c))];
+  }
+
+  /** Shape of the children auto-selection gives `sel` (same entry, parent and number). */
+  _defaultShape(sel) {
+    const tmp = new Selection(sel.def, sel.parent, sel.groupPath, sel.number);
+    const list = this._childrenOf(sel.parent);
+    list.push(tmp);
+    this._reset();
+    try {
+      this._autofill(tmp);
+      return JSON.stringify(tmp.children.map((c) => this._shape(c)));
+    } finally {
+      list.splice(list.indexOf(tmp), 1);
+      this._reset();
+    }
+  }
+
+  /** Options a selection's entry was chosen from (as used when rebuilding). */
+  _shareOptions(parent) {
+    return parent.isForce
+      ? this._optionSource(parent).entries.map((def) => ({ def, groupPath: [] }))
+      : parent.def.flatOptions();
+  }
+
+  /** Shortest start of `key` (4+ chars) that no other option key shares: IDs stay short but still survive data updates. */
+  _shortKey(key, options) {
+    const others = [...new Set(options.map((o) => o.def.key))].filter((k) => k !== key);
+    for (let len = 4; len < key.length; len++) {
+      const p = key.slice(0, len);
+      if (!p.endsWith('-') && !others.some((k) => k.startsWith(p))) return p;
+    }
+    return key;
+  }
+
+  _shareSel(sel, index) {
+    const isDefault = JSON.stringify(sel.children.map((c) => this._shape(c))) === this._defaultShape(sel);
+    const key = this._shortKey(sel.def.key, this._shareOptions(sel.parent));
+    const out = [key, sel.number, isDefault ? 0 : sel.children.map((c) => this._shareSel(c, index)), sel.customName || ''];
+    const att = (sel.attachments || []).map((a) => [a.assocId, index.get(a.targetId)]).filter((a) => a[1] != null);
+    if (att.length) out.push(att);
+    while (out.length > 1 && (out[out.length - 1] === '' || (out.length === 3 && out[2] === 0) || (out.length === 2 && out[1] === 1))) out.pop();
+    return out.length === 1 ? out[0] : out;
+  }
+
+  /** Compact, JSON-serialisable form of the roster for share codes / QR codes. */
+  toShare() {
+    const r = this.roster;
+    const forces = r.forces.map((f) => {
+      const index = new Map(f.selections.map((s, i) => [s.id, i]));
+      return [f.forceEntry.id, f.catalogueId === r.catalogueId ? 0 : f.catalogueId, f.selections.map((s) => this._shareSel(s, index))];
+    });
+    this._reset();
+    return [1, r.catalogueId, r.name, r.costLimits, forces, this.points()];
+  }
+
+  /** Rebuild a roster from toShare() output. Sets `loadWarnings` for anything that didn't resolve. */
+  static fromShare(data, payload) {
+    const [version, catalogueId, name, costLimits, forces, points] = payload;
+    if (version !== 1) throw new Error('This share code was made by a newer version of PawHammer.');
+    const cat = data.catalogues.find((c) => c.id === catalogueId) || data.primaryCatalogue;
+    const roster = new Roster({ name, gameSystemId: data.gameSystem.id, catalogueId: cat.id, catalogueName: cat.name });
+    roster.costLimits = costLimits || {};
+    const engine = new RosterEngine(data, roster);
+    const unpack = (enc) => (typeof enc === 'string' ? [enc, 1, 0, '', null] : [enc[0], enc[1] == null ? 1 : enc[1], enc[2] == null ? 0 : enc[2], enc[3] || '', enc[4] || null]);
+    const defaults = []; // selections whose children are "whatever auto-selection picks"
+    const build = (parent, list, options) => {
+      const made = [];
+      for (const enc of list) {
+        const [key, number, children, customName] = unpack(enc);
+        const hits = options.filter((o) => o.def.key.startsWith(key));
+        const opt = hits.find((o) => o.def.key === key) || hits[0];
+        if (!opt) { engine.loadWarnings.push(`An entry (${key}) isn't in the current data and was left out.`); made.push(null); continue; }
+        if (new Set(hits.map((o) => o.def.key)).size > 1) engine.loadWarnings.push(`"${opt.def.name}" may not match what was shared (the data has changed).`);
+        const sel = new Selection(opt.def, parent, opt.groupPath, number);
+        sel.customName = customName;
+        engine._childrenOf(parent).push(sel);
+        engine._reset();
+        if (children === 0) { engine._autofill(sel); defaults.push(sel); } else build(sel, children, opt.def.flatOptions());
+        made.push(sel);
+      }
+      return made;
+    };
+    for (const [forceEntryId, forceCat, sels] of forces) {
+      const fe = data.forceEntries.find((f) => f.id === forceEntryId);
+      if (!fe) { engine.loadWarnings.push('The army type in this share code no longer exists in the data.'); continue; }
+      const force = new Force(roster, fe, forceCat || cat.id);
+      roster.forces.push(force);
+      const roots = engine._optionSource(force).entries.map((def) => ({ def, groupPath: [] }));
+      const made = build(force, sels, roots);
+      sels.forEach((enc, i) => {
+        const att = unpack(enc)[4];
+        if (made[i] && att) made[i].attachments = att.filter(([, t]) => made[t]).map(([assocId, t]) => ({ assocId, targetId: made[t].id }));
+      });
+    }
+    // Defaults were computed against the finished roster when sharing (e.g. a Force Disposition
+    // only offered once a Detachment is chosen), so fill them again now that everything exists.
+    for (const sel of defaults) { engine._reset(); engine._autofill(sel); }
+    engine._pruneAttachments();
+    engine._reset();
+    if (points != null && engine.points() !== points) {
+      engine.loadWarnings.push(`Shared at ${fmt(points)} pts; with this copy of the data it's ${fmt(engine.points())} pts.`);
+    }
+    return engine;
+  }
+
   _restoreChildren(parent, list) {
     const options = parent.isForce
       ? this._optionSource(parent).entries.map((def) => ({ def, groupPath: [] }))

@@ -5,6 +5,7 @@ import { store } from './store.js';
 import { toast, download } from './toast.js';
 import { parseGwAppText } from '../import/gw-app-text.js';
 import { norm } from '../import/importer.js';
+import { qrScanner, extractShareCode } from '../data/share-code.js';
 
 function factionGroup(name) {
   const m = /^([^-]+?)\s+-\s+/.exec(name);
@@ -57,6 +58,7 @@ export function renderHome(app) {
             from the community-maintained <a href="https://github.com/${app.repo.source.owner || 'BSData'}/${app.repo.source.repo || ''}" class="link-light" target="_blank" rel="noopener">BSData</a> repository.</p>
           <div class="d-grid gap-2 mb-4">
             <button class="btn btn-success" id="btn-new"><i class="bi bi-plus-lg me-1"></i>New Roster</button>
+            <button class="btn btn-outline-light" id="btn-receive"><i class="bi bi-qr-code-scan me-1"></i>Scan QR / Enter Code</button>
             <button class="btn btn-outline-light" id="btn-text-import"><i class="bi bi-clipboard-plus me-1"></i>Import from Text</button>
             <label class="btn btn-outline-light mb-0">
               <i class="bi bi-upload me-1"></i>Import Roster File
@@ -72,6 +74,7 @@ export function renderHome(app) {
 
   root.querySelector('#btn-new').addEventListener('click', () => openNewRoster(app));
   root.querySelector('#btn-text-import').addEventListener('click', () => openTextImport(app));
+  root.querySelector('#btn-receive').addEventListener('click', () => openReceive());
   root.querySelector('#import-file').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
     if (!file) return;
@@ -139,6 +142,74 @@ async function showDataStatus(app) {
     const retry = document.getElementById('btn-retry');
     if (retry) retry.addEventListener('click', () => { app.resetRepository(); renderHome(app); });
   }
+}
+
+/** "Scan QR / Enter Code": read a shared roster with the camera, or from a pasted link/code. */
+export function openReceive() {
+  const modalEl = document.getElementById('receive-modal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  const video = modalEl.querySelector('#receive-video');
+  const box = modalEl.querySelector('#receive-video-box');
+  const status = modalEl.querySelector('#receive-status');
+  const input = modalEl.querySelector('#receive-code');
+  const cameraBtn = modalEl.querySelector('#receive-camera');
+  let stream = null;
+  let scanning = false;
+
+  const stop = () => {
+    scanning = false;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    video.srcObject = null;
+    box.classList.add('d-none');
+    cameraBtn.disabled = false;
+  };
+  const open = (code) => {
+    stop();
+    modal.hide();
+    location.hash = '#/share/' + code;
+  };
+
+  input.value = '';
+  status.innerHTML = '';
+  box.classList.add('d-none');
+  cameraBtn.disabled = !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  if (cameraBtn.disabled) status.innerHTML = String(html`<span class="opacity-75">This browser can't use the camera here; paste the link instead.</span>`);
+
+  cameraBtn.onclick = async () => {
+    try {
+      cameraBtn.disabled = true;
+      status.innerHTML = String(html`<span class="opacity-75">Starting camera…</span>`);
+      const detect = await qrScanner();
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      video.srcObject = stream;
+      box.classList.remove('d-none');
+      await video.play();
+      status.innerHTML = String(html`<span class="opacity-75">Point the camera at a PawHammer QR code.</span>`);
+      scanning = true;
+      const tick = async () => {
+        if (!scanning) return;
+        let text = null;
+        try { text = await detect(video); } catch { /* frame not ready */ }
+        const code = text && extractShareCode(text);
+        if (code) { open(code); return; }
+        if (text) status.innerHTML = String(html`<span class="text-warning">That QR code isn't a PawHammer roster.</span>`);
+        setTimeout(tick, 250);
+      };
+      tick();
+    } catch (err) {
+      stop();
+      status.innerHTML = String(html`<span class="text-danger">${err.name === 'NotAllowedError' ? 'Camera access was blocked.' : err.message || 'Could not start the camera.'} Paste the link instead.</span>`);
+    }
+  };
+  modalEl.querySelector('#receive-form').onsubmit = (ev) => {
+    ev.preventDefault();
+    const code = extractShareCode(input.value);
+    if (!code) { status.innerHTML = String(html`<span class="text-danger">That isn't a PawHammer share link or code.</span>`); return; }
+    open(code);
+  };
+  modalEl.addEventListener('hidden.bs.modal', stop, { once: true });
+  modal.show();
 }
 
 /** Faction catalogue for a faction name from a text list, e.g. "Chaos Space Marines". */

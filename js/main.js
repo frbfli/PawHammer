@@ -7,6 +7,7 @@ import { store } from './ui/store.js';
 import { html, fmtPts } from './ui/html.js';
 import { parseGwAppText } from './import/gw-app-text.js';
 import { importList } from './import/importer.js';
+import { decodeShare } from './data/share-code.js';
 import { renderHome, openNewRoster } from './ui/home.js';
 import { Editor } from './ui/editor.js';
 import { PlayView } from './ui/play.js';
@@ -115,6 +116,61 @@ class App {
     });
   }
 
+  /** A roster opened from a share link / QR code: preview it, then save it as the user's own copy. */
+  async showSharedRoster(code, hash) {
+    document.getElementById('nav-rosters').classList.remove('active');
+    this.showLoading('Opening shared roster…');
+    try {
+      const payload = await decodeShare(code);
+      const data = await this.loadGameData(payload[1], (msg) => this.showLoading(msg));
+      if (location.hash !== hash) return;
+      const engine = RosterEngine.fromShare(data, payload);
+      const r = engine.roster;
+      const force = r.forces[0];
+      const limit = engine.costLimits()[engine.ptsTypeId];
+      const chosen = (name) => {
+        const sel = force && force.selections.find((s) => s.def.name === name);
+        return sel ? [...engine.walk(sel)].map((s) => engine.displayName(s).replace(/^\d+\.\s*/, '')) : [];
+      };
+      const groups = force ? engine.groupedSelections(force).filter((g) => g.selections.some((s) => s.def.type !== 'upgrade')) : [];
+      document.title = `Shared: ${r.name} — PawHammer`;
+      this.root.innerHTML = String(html`
+        <div class="row justify-content-center"><div class="col-lg-8">
+          <div class="p-4 border rounded bg-secondary">
+            <div class="d-flex justify-content-between align-items-start border-bottom pb-2 mb-3 gap-2">
+              <div>
+                <small class="opacity-75 d-block"><i class="bi bi-qr-code me-1"></i>Shared roster</small>
+                <h3 class="fw-bold mb-0">${r.name}</h3>
+                <small class="opacity-75">${r.catalogueName}${chosen('Detachment').length ? ` • ${chosen('Detachment').join(', ')}` : ''}${chosen('Battle Size').length ? ` • ${chosen('Battle Size')[0]}` : ''}</small>
+              </div>
+              <span class="badge bg-primary fs-6 pts">${fmtPts(engine.points())}${limit != null ? ` / ${fmtPts(limit)}` : ''} pts</span>
+            </div>
+            ${engine.loadWarnings.map((w) => html`<div class="alert alert-warning py-2 px-3 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>${w}</div>`)}
+            ${groups.map((g) => html`<div class="list-cat-heading"><span>${g.name}</span></div>
+              <ul class="list-group mb-2">${g.selections.filter((s) => s.def.type !== 'upgrade').map((s) => html`
+                <li class="list-group-item bg-dark text-light d-flex justify-content-between align-items-center py-2">
+                  <span class="fw-bold text-primary">${engine.displayName(s)}${engine.isWarlord(s) ? html` <span class="badge bg-warning text-dark ms-1">Warlord</span>` : ''}</span>
+                  <span class="badge bg-primary rounded-pill pts">${fmtPts(engine.points(s))} pts</span>
+                </li>`)}</ul>`)}
+            <div class="d-flex flex-wrap gap-2 justify-content-end mt-3">
+              <a href="#/" class="btn btn-outline-light">Cancel</a>
+              <button class="btn btn-outline-light" id="shared-play"><i class="bi bi-play-fill me-1"></i>Save &amp; Play</button>
+              <button class="btn btn-success" id="shared-save"><i class="bi bi-download me-1"></i>Save to My Rosters</button>
+            </div>
+          </div>
+        </div></div>`);
+      const save = (target) => {
+        store.saveRoster(engine.toJSON());
+        toast(`Saved "${r.name}" to your rosters`);
+        location.replace(`#/${target}/${encodeURIComponent(r.id)}`);
+      };
+      this.root.querySelector('#shared-save').addEventListener('click', () => save('roster'));
+      this.root.querySelector('#shared-play').addEventListener('click', () => save('play'));
+    } catch (err) {
+      this.showError(err);
+    }
+  }
+
   /** Build a roster from a pasted app export, save it, open it and show what was matched. */
   async importFromText(text, catalogueId) {
     this.showLoading('Preparing data…');
@@ -183,6 +239,8 @@ class App {
     if (this.view && this.view.destroy) this.view.destroy();
     this.view = null;
     const hash = location.hash || '#/';
+    const shared = /^#\/share\/([A-Za-z0-9_-]+)$/.exec(hash);
+    if (shared) { this.showSharedRoster(shared[1], hash); return; }
     const m = /^#\/(roster|play)\/(.+)$/.exec(hash);
     document.getElementById('nav-rosters').classList.toggle('active', !m);
     if (!m) {

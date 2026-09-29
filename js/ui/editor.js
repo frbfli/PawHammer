@@ -7,6 +7,7 @@ import { VirtualSelection } from '../engine/roster.js';
 import { datasheetHtml } from './datasheet.js';
 import { toBattleScribeXml } from '../engine/battlescribe-export.js';
 import { getYellowscribeCode, YELLOWSCRIBE_URL } from '../data/yellowscribe.js';
+import { encodeShare, shareLink, qrSvg } from '../data/share-code.js';
 
 const YS_MOD_URL = 'https://steamcommunity.com/sharedfiles/filedetails/?id=2920625970';
 const safeFileName = (s) => String(s || 'roster').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'roster';
@@ -162,6 +163,8 @@ export class Editor {
           <div class="dropdown">
             <button class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-box-arrow-up me-1"></i>Export</button>
             <ul class="dropdown-menu dropdown-menu-end">
+              <li><button class="dropdown-item" data-act="${this.actions.add(() => this.shareRoster())}"><i class="bi bi-qr-code"></i> Share (QR code)</button></li>
+              <li><hr class="dropdown-divider"></li>
               <li><button class="dropdown-item" data-act="${this.actions.add(() => this.copyList())}"><i class="bi bi-clipboard"></i> Copy as text</button></li>
               <li><button class="dropdown-item" data-act="${this.actions.add(() => download(`${r.name}.txt`, e.toText()))}"><i class="bi bi-file-text"></i> Download text</button></li>
               <li><button class="dropdown-item" data-act="${this.actions.add(() => download(`${r.name}.json`, JSON.stringify(e.toJSON(), null, 2), 'application/json'))}"><i class="bi bi-filetype-json"></i> Download JSON</button></li>
@@ -188,6 +191,39 @@ export class Editor {
   findTop(id) {
     const sel = this.engine.findSelection(id);
     return sel ? sel.rootEntry : null;
+  }
+
+  /** Show a QR code + link that opens this roster in anyone's PawHammer (nothing is uploaded). */
+  async shareRoster() {
+    const el = document.getElementById('share-modal');
+    const body = el.querySelector('#share-body');
+    body.innerHTML = String(html`<div class="d-flex align-items-center gap-3 py-3">
+      <div class="spinner-border text-primary" role="status" aria-hidden="true"></div><span>Creating your share code…</span></div>`);
+    bootstrap.Modal.getOrCreateInstance(el).show();
+    try {
+      const link = shareLink(await encodeShare(this.engine.toShare()));
+      const svg = await qrSvg(link);
+      body.innerHTML = String(html`
+        <div class="share-qr mb-3">${raw(svg)}</div>
+        <p class="small text-center mb-3">Point a phone camera at the code, or use <strong>Scan QR / Enter Code</strong> on the PawHammer home screen.
+          The roster is inside the code itself: nothing is uploaded and it never expires.</p>
+        <label class="form-label fw-semibold text-primary" for="share-link">Share link</label>
+        <div class="input-group">
+          <input class="form-control form-control-sm font-monospace" id="share-link" value="${link}" readonly>
+          <button class="btn btn-success" type="button" id="share-copy"><i class="bi bi-clipboard me-1"></i>Copy</button>
+        </div>
+        ${navigator.share ? html`<div class="d-grid mt-2"><button class="btn btn-outline-light" type="button" id="share-native"><i class="bi bi-share me-1"></i>Share…</button></div>` : ''}`);
+      const input = body.querySelector('#share-link');
+      input.addEventListener('focus', () => input.select());
+      body.querySelector('#share-copy').addEventListener('click', async () => {
+        const ok = await copyText(link);
+        toast(ok ? 'Share link copied' : 'Copy failed', ok ? 'success' : 'danger');
+      });
+      const native = body.querySelector('#share-native');
+      if (native) native.addEventListener('click', () => navigator.share({ title: this.engine.roster.name, url: link }).catch(() => {}));
+    } catch (err) {
+      body.innerHTML = String(html`<div class="alert alert-danger py-2 px-3 small mb-0"><i class="bi bi-x-octagon me-1"></i>${err.message}</div>`);
+    }
   }
 
   /** BattleScribe roster file: opens in BattleScribe / New Recruit and uploads to Yellowscribe. */

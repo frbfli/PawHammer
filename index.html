@@ -129,6 +129,56 @@
         </div>
     </div>
 
+    <!-- SHARE (QR CODE) MODAL -->
+    <div class="modal fade" id="share-modal" tabindex="-1" aria-labelledby="share-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border">
+                <div class="modal-header bg-primary text-white">
+                    <div>
+                        <h5 class="modal-title fw-bold" id="share-title"><i class="bi bi-qr-code me-2"></i>Share Roster</h5>
+                        <small class="opacity-75">Scan with a phone camera, or use Scan QR in PawHammer</small>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4" id="share-body"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RECEIVE (SCAN / ENTER CODE) MODAL -->
+    <div class="modal fade" id="receive-modal" tabindex="-1" aria-labelledby="receive-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <form class="modal-content border" id="receive-form">
+                <div class="modal-header bg-primary text-white">
+                    <div>
+                        <h5 class="modal-title fw-bold" id="receive-title"><i class="bi bi-qr-code-scan me-2"></i>Scan QR / Enter Code</h5>
+                        <small class="opacity-75">Open a roster someone shared with you</small>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="scan-box mb-3 d-none" id="receive-video-box">
+                        <video id="receive-video" playsinline muted></video>
+                        <div class="scan-frame"></div>
+                    </div>
+                    <div class="d-grid mb-3">
+                        <button type="button" class="btn btn-success" id="receive-camera"><i class="bi bi-camera me-1"></i>Scan with camera</button>
+                    </div>
+                    <div class="small mb-3" id="receive-status"></div>
+                    <label class="form-label fw-semibold text-primary" for="receive-code">Or paste a share link / code</label>
+                    <textarea class="form-control font-monospace small" id="receive-code" rows="3" placeholder="https://…/#/share/z…"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-box-arrow-in-down me-1"></i>Open</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- TEXT IMPORT MODAL -->
     <div class="modal fade" id="text-import-modal" tabindex="-1" aria-labelledby="text-import-title" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
