@@ -34,6 +34,8 @@ Any static file server works; ES modules just need to be served over HTTP, not o
   plus the detachment rules.
 - Rosters auto-save to browser storage. You can export them as text, JSON or a BattleScribe
   roster (`.ros`, which also opens in New Recruit), re-import them, and print them as datasheets.
+- **Unit Lookup** (home page): pick a faction and start typing a unit name. Matching units appear
+  as you type, and picking one (or pressing Search) opens its datasheet with default wargear and points.
 - **Share by QR code:** Export → *Share (QR code)* shows a QR code and link that contain the whole
   roster in compressed form, so nothing is uploaded and codes never expire. Scanning with a phone
   camera opens PawHammer with an import prompt. *Scan QR / Enter Code* on the home screen reads a

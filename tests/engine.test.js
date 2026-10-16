@@ -8,6 +8,7 @@ import { RosterEngine } from '../js/engine/engine.js';
 import { toBattleScribeXml } from '../js/engine/battlescribe-export.js';
 import { parseGwAppText } from '../js/import/gw-app-text.js';
 import { importList } from '../js/import/importer.js';
+import { lookupUnits } from '../js/ui/unit-lookup-units.js';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const load = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
@@ -344,6 +345,27 @@ test('share codes: compact form rebuilds the exact roster', () => {
   assert.deepStrictEqual(e2.leadersOf(w2).map((s) => s.def.name).sort(), ['Overlord', 'Technomancer']);
   assert.deepStrictEqual(e2.warlords(f2).map((s) => s.def.name), ['Overlord']);
   assert.deepStrictEqual(e2.validate(), e.validate().map((i) => ({ ...i, selectionId: i.selectionId && e2.validate().find((j) => j.message === i.message).selectionId })));
+});
+
+test('unit lookup: own datasheets only, with every available weapon', () => {
+  const names = ['Chaos - Chaos Space Marines', 'Chaos - Chaos Knights Library', 'Chaos - Chaos Daemons Library', 'Library - Astartes Heresy Legends', 'Library - Titans', 'Unaligned Forces'];
+  const cats = names.map((n) => load(n + '.json').catalogue);
+  const e = RosterEngine.create(new GameData(gs, cats, cats[0].id), {});
+  const force = e.roster.forces[0];
+  const { units, factionKeywords } = lookupUnits(e, force);
+  const listed = units.map((o) => o.def.name);
+  assert.deepStrictEqual(factionKeywords, ['Faction: Heretic Astartes']);
+  assert.ok(listed.includes('Legionaries') && listed.includes('Abaddon the Despoiler'));
+  assert.ok(listed.includes('Fabius Bile'), 'units without a faction keyword are kept');
+  assert.ok(!listed.some((n) => /\[legends\]/i.test(n)), 'no Legends');
+  assert.ok(!listed.some((n) => /Knight|War Dog|Titan/.test(n)), 'no allied Knights/Titans: ' + listed.filter((n) => /Knight|War Dog|Titan/.test(n)));
+
+  const legionaries = units.find((o) => o.def.name === 'Legionaries').def;
+  const preview = e.previewEntry(force, legionaries, { available: true });
+  const weapons = new Set(preview.info.profiles.filter((p) => /weapon/i.test(p.typeName)).map((p) => p.name));
+  for (const w of ['Boltgun', 'Astartes chainsword', 'Heavy bolter', 'Lascannon', 'Meltagun', 'Reaper chaincannon']) assert.ok(weapons.has(w), `Legionaries can take ${w}`);
+  assert.ok(e.previewEntry(force, legionaries).info.profiles.filter((p) => /weapon/i.test(p.typeName)).length < weapons.size, 'defaults are a subset');
+  assert.ok(!preview.info.profiles.some((p) => /Battle Scar|Battle Trait/i.test(p.typeName + p.name)), 'no hidden Crusade options');
 });
 
 test('ally points limits only count units with that faction keyword', () => {

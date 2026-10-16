@@ -811,7 +811,7 @@ export class RosterEngine {
    * Datasheet preview for an entry that has not been added: builds it with its default
    * selections, describes it, then removes it again without notifying listeners.
    */
-  previewEntry(parent, def) {
+  previewEntry(parent, def, { available = false } = {}) {
     const sel = new Selection(def, parent, [], 1);
     const list = this._childrenOf(parent);
     list.push(sel);
@@ -819,7 +819,8 @@ export class RosterEngine {
     try {
       this._autofill(sel);
       this._reset();
-      return { points: this.points(sel), models: this.modelCount(sel), info: this.describe(sel) };
+      // available: every weapon/wargear option it could take, not just the defaults.
+      return { points: this.points(sel), models: this.modelCount(sel), info: available ? this.describeAvailable(sel) : this.describe(sel) };
     } finally {
       list.splice(list.indexOf(sel), 1);
       this._reset();
@@ -1126,6 +1127,37 @@ export class RosterEngine {
     this._applyModifiers(state, mods, groups, self);
     this._memo.set(memoKey, state);
     return state;
+  }
+
+  /**
+   * Everything a unit could take: its own profiles and rules plus those of every available
+   * option (other model variants, weapon swaps, wargear), selected or not. Options the data
+   * hides (Crusade upgrades, enhancements without a detachment, …) or caps at 0 are skipped.
+   * Same shape as describe(), without counts.
+   */
+  describeAvailable(sel) {
+    const profiles = new Map();
+    const rules = new Map();
+    const visit = (node, depth) => {
+      const info = this.describe(node, { deep: false });
+      for (const p of info.profiles) {
+        const k = p.typeName + '|' + p.name + '|' + p.characteristics.map((c) => c.value).join('|');
+        if (!profiles.has(k)) profiles.set(k, { ...p, count: undefined });
+      }
+      for (const r of info.rules) if (!rules.has(r.name)) rules.set(r.name, r);
+      if (depth > 6) return;
+      const kids = node.virtual ? [] : node.children;
+      for (const { def, groupPath } of node.def.flatOptions()) {
+        if (groupPath.some((g, i) => this.evaluate(new VirtualSelection(g, node, groupPath.slice(0, i))).hidden)) continue;
+        const child = kids.find((c) => c.def === def) || new VirtualSelection(def, node, groupPath);
+        const st = this.evaluate(child);
+        if (st.hidden || this._limits(st, ['parent']).max === 0) continue;
+        visit(child, depth + 1);
+      }
+    };
+    visit(sel, 0);
+    const keywords = [...this.evaluate(sel).categories].map((id) => (this.data.categories.get(id) || {}).name).filter(Boolean);
+    return { profiles: [...profiles.values()], rules: [...rules.values()], keywords };
   }
 
   /**

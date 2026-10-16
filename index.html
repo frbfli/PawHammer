@@ -41,6 +41,7 @@
                     <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                         <li class="nav-item"><a class="nav-link" href="#/" id="nav-rosters">Rosters</a></li>
                         <li class="nav-item"><a class="nav-link" href="#" id="nav-new">New Roster</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#" id="nav-lookup"><i class="bi bi-search me-1"></i>Unit Lookup</a></li>
                         <li class="nav-item"><a class="nav-link" href="#" id="btn-settings"><i class="bi bi-database-gear me-1"></i>Data Source</a></li>
                     </ul>
                     <div class="d-flex align-items-center pb-2 pb-lg-0">
@@ -124,6 +125,53 @@
                 <div class="modal-body p-4" id="ys-body"></div>
                 <div class="modal-footer" id="ys-footer">
                     <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UNIT DATASHEET MODAL (unit lookup) -->
+    <div class="modal fade" id="unit-modal" tabindex="-1" aria-labelledby="unit-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+            <div class="modal-content border">
+                <div class="modal-header bg-primary text-white">
+                    <div style="min-width:0">
+                        <h5 class="modal-title fw-bold" id="unit-modal-title">Datasheet</h5>
+                        <small class="opacity-75" id="unit-modal-subtitle"></small>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4" id="unit-modal-body"></div>
+                <div class="modal-footer justify-content-between">
+                    <button type="button" class="btn btn-outline-light" id="unit-modal-back"><i class="bi bi-arrow-left me-1"></i>Back to Search</button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UNIT LOOKUP MODAL (navbar) -->
+    <div class="modal fade" id="lookup-modal" tabindex="-1" aria-labelledby="lookup-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border">
+                <div class="modal-header bg-primary text-white">
+                    <div>
+                        <h5 class="modal-title fw-bold" id="lookup-title"><i class="bi bi-search me-2"></i>Unit Lookup</h5>
+                        <small class="opacity-75">Pick a faction, then search for a unit</small>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <label class="form-label small fw-semibold text-primary mb-1" for="lookup-faction">Faction</label>
+                    <select class="form-select mb-3" id="lookup-faction"><option value="">Loading factions…</option></select>
+                    <label class="form-label small fw-semibold text-primary mb-1" for="lookup-input">Unit name</label>
+                    <div class="input-group">
+                        <input class="form-control" id="lookup-input" type="search" placeholder="Choose a faction first" disabled autocomplete="off"
+                            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="lookup-suggestions">
+                        <button class="btn btn-success" type="button" id="lookup-search" disabled><i class="bi bi-search me-1"></i>Search</button>
+                    </div>
+                    <ul class="list-group lookup-suggestions d-none mt-2" id="lookup-suggestions" role="listbox" aria-label="Matching units"></ul>
+                    <div class="small mt-2" id="lookup-status"></div>
                 </div>
             </div>
         </div>

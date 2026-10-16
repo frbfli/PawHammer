@@ -11,6 +11,7 @@ import { decodeShare } from './data/share-code.js';
 import { renderHome, openNewRoster } from './ui/home.js';
 import { Editor } from './ui/editor.js';
 import { PlayView } from './ui/play.js';
+import { openUnitLookup } from './ui/unit-lookup.js';
 import { toast } from './ui/toast.js';
 
 class App {
@@ -64,6 +65,13 @@ class App {
       settingsEl.querySelector('#set-branch').value = src.branch;
     };
     document.getElementById('nav-new').addEventListener('click', (ev) => { ev.preventDefault(); openNewRoster(this); });
+    document.getElementById('nav-lookup').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      // On phones the navbar is a collapsed menu: close it so the pop-up isn't hidden behind it.
+      const menu = document.getElementById('navbarNav');
+      if (menu.classList.contains('show')) bootstrap.Collapse.getOrCreateInstance(menu).hide();
+      openUnitLookup(this);
+    });
     document.getElementById('btn-settings').addEventListener('click', (ev) => {
       ev.preventDefault();
       fill(store.settings().source);
