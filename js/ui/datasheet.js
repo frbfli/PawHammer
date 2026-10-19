@@ -40,10 +40,10 @@ function keywordModal() {
   return el;
 }
 
-function showKeywordRule({ keyword, rule }) {
+function showKeywordRule({ keyword, rule, kind = 'Weapon ability' }) {
   const el = keywordModal();
   el.querySelector('#keywordModalLabel').textContent = keyword;
-  el.querySelector('#keywordModalSub').textContent = rule.name.toLowerCase() === keyword.toLowerCase() ? 'Weapon ability' : `Weapon ability: ${rule.name}`;
+  el.querySelector('#keywordModalSub').textContent = rule.name.toLowerCase() === keyword.toLowerCase() ? kind : `${kind}: ${rule.name}`;
   el.querySelector('#keywordModalBody').innerHTML = String(rule.description ? html`<p class="mb-0">${richText(rule.description)}</p>` : html`<p class="mb-0 opacity-75">No rules text in the data.</p>`);
   bootstrap.Modal.getOrCreateInstance(el).show();
 }
@@ -98,10 +98,25 @@ function groupByType(profiles) {
 
 // ---- section builders
 
+/** Base size is shown as text under the keywords, not as a stat box. */
+const isBaseStat = (c) => /^base/i.test(c.name.trim());
+
+/** "Base size" text entries for unit profiles; names are only added when sizes differ. */
+function baseSizes(entries) {
+  const found = entries.flatMap(({ name, profile }) => profile.characteristics
+    .filter((c) => isBaseStat(c) && c.value && c.value !== '-').map((c) => ({ name, value: c.value })));
+  const values = [...new Set(found.map((b) => b.value))];
+  if (values.length <= 1) return values;
+  const seen = new Set();
+  return found.filter((b) => !seen.has(b.name + '|' + b.value) && seen.add(b.name + '|' + b.value))
+    .map((b) => `${b.name}: ${b.value}`);
+}
+
 function statLine(p) {
+  const stats = p.characteristics.filter((c) => !isBaseStat(c));
   // Even grid so every characteristic stays on one row, even on phones.
-  return html`<div class="stat-line mb-2" style="grid-template-columns: repeat(${p.characteristics.length}, minmax(0, 1fr));">
-    ${p.characteristics.map((c) => html`<div class="stat-box"><span class="stat-label">${c.name}</span><span class="stat-value">${c.value || '-'}</span></div>`)}
+  return html`<div class="stat-line mb-2" style="grid-template-columns: repeat(${stats.length}, minmax(0, 1fr));">
+    ${stats.map((c) => html`<div class="stat-box"><span class="stat-label">${c.name}</span><span class="stat-value">${c.value || '-'}</span></div>`)}
   </div>`;
 }
 
@@ -190,20 +205,29 @@ function rulesSection(rules) {
   if (!rules.length) return '';
   return html`<div class="mb-4">
     <h6 class="fw-bold text-primary mb-2">Rules</h6>
-    ${rules.map((r) => html`<details class="rule mb-1"><summary>${r.name}</summary><div>${r.description ? richText(r.description) : html`<em>No description in data.</em>`}</div></details>`)}
+    <div class="d-flex flex-wrap gap-2">
+      ${rules.map((r) => {
+        if (keywordRules.size > 5000) keywordRules.clear();
+        const id = 'kw' + (++keywordSeq);
+        keywordRules.set(id, { keyword: r.name, rule: r, kind: 'Rule' });
+        return html`<button type="button" class="badge bg-dark border text-info p-2 kw-badge" data-kw-rule="${id}"
+          title="Show the ${r.name} rule">${r.name}</button>`;
+      })}
+    </div>
   </div>`;
 }
 
-function keywordsSection(keywords) {
-  if (!keywords.length) return '';
+function keywordsSection(keywords, bases = []) {
+  if (!keywords.length && !bases.length) return '';
   const faction = keywords.filter((k) => /^Faction:/i.test(k));
   const other = keywords.filter((k) => !/^Faction:/i.test(k));
   return html`<div>
-    <h6 class="fw-bold text-primary mb-2">Keywords</h6>
+    ${keywords.length ? html`<h6 class="fw-bold text-primary mb-2">Keywords</h6>
     <div class="d-flex flex-wrap gap-2">
       ${other.map((k) => html`<span class="badge bg-dark border text-light p-2">${k}</span>`)}
       ${faction.map((k) => html`<span class="badge bg-primary p-2">${k.replace(/^Faction:\s*/i, '')}</span>`)}
-    </div>
+    </div>` : ''}
+    ${bases.length ? html`<div class="small opacity-75 mt-2">Base size: ${bases.join(', ')}</div>` : ''}
   </div>`;
 }
 
@@ -221,7 +245,7 @@ export function datasheetHtml(d, { divider = false, counts = false } = {}) {
     ...weaponSections(byType, d.rules, usedRules, counts),
     abilitiesSection(abilityProfiles(byType)),
     rulesSection(d.rules.filter((r) => !usedRules.has(r))),
-    keywordsSection(d.keywords),
+    keywordsSection(d.keywords, baseSizes((byType.get('Unit') || []).map((p) => ({ name: p.name, profile: p })))),
   ];
   return html`${divider ? html`<hr class="my-4">` : ''}${sections}`;
 }
@@ -277,6 +301,8 @@ export function combinedDatasheetHtml(members) {
     }
   }
   const keywords = [...new Set(members.flatMap((m) => m.info.keywords))];
+  const bases = baseSizes(members.flatMap((m) => m.info.profiles.filter((p) => p.typeName === 'Unit')
+    .map((p) => ({ name: p.name, profile: p }))));
 
   const usedRules = new Set();
   const byType = groupByType(weapons);
@@ -288,5 +314,5 @@ export function combinedDatasheetHtml(members) {
     ${weaponSections(byType, rules, usedRules, true)}
     ${abilitiesSection(abilities)}
     ${rulesSection(rules.filter((r) => !usedRules.has(r)))}
-    ${keywordsSection(keywords)}`;
+    ${keywordsSection(keywords, bases)}`;
 }

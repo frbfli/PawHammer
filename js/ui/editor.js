@@ -32,7 +32,7 @@ export class Editor {
 
     this.root.innerHTML = String(html`
       <ul class="nav nav-tabs d-lg-none mb-3 mobile-tabs" role="tablist" id="mobile-tabs"></ul>
-      <div class="p-3 border rounded bg-secondary mb-4 d-lg-block" id="ed-bar" data-tab="army"></div>
+      <div class="px-3 py-2 border rounded bg-secondary mb-3 d-lg-block" id="ed-bar" data-tab="army"></div>
       <div class="row g-4">
         <div class="col-lg-3 order-2 order-lg-1 d-lg-block" data-tab="units">
           <div class="p-3 border rounded bg-secondary pane" id="pane-add">
@@ -144,14 +144,13 @@ export class Editor {
         <div class="flex-grow-1 flex-md-grow-0" style="min-width:0">
           <input class="form-control form-control-sm roster-name-input w-100" value="${r.name}" aria-label="Roster name"
             data-act="${this.actions.add((ev) => e.setRosterName(ev.target.value.trim() || 'Untitled roster'))}">
-          <small class="opacity-75 ps-1">${r.catalogueName || ''}</small>
+          <small class="roster-catalogue opacity-75 ps-1 d-block text-truncate">${r.catalogueName || ''}</small>
         </div>
         <div class="ms-auto d-flex flex-wrap align-items-center gap-3">
           ${others.map((x) => html`<span class="small opacity-75" title="${x.t.name}">${x.t.name}: <strong class="pts text-light">${fmtPts(x.v)}${x.lim != null ? ' / ' + fmtPts(x.lim) : ''}</strong></span>`)}
-          <div class="points-meter" title="Points">
-            <span class="small opacity-75 d-block">Points Limit</span>
-            <span class="pts fw-bold fs-5 d-block mb-1 ${over ? 'text-danger' : 'text-light'}">${fmtPts(pts)} / ${limit != null ? fmtPts(limit) : '—'} pts</span>
-            <div class="progress" style="height: 8px;" role="progressbar" aria-label="Points used" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+          <div class="points-meter" title="Points used / points limit">
+            <span class="pts fw-bold d-block mb-1 ${over ? 'text-danger' : 'text-light'}">${fmtPts(pts)} / ${limit != null ? fmtPts(limit) : '—'} pts</span>
+            <div class="progress" style="height: 4px;" role="progressbar" aria-label="Points used" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
               <div class="progress-bar ${over ? 'bg-danger' : 'bg-success'}" style="width:${limit ? pct : 0}%"></div>
             </div>
           </div>

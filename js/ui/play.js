@@ -87,25 +87,23 @@ export class PlayView {
     const errors = e.validate().filter((i) => i.level === 'error').length;
 
     this.root.innerHTML = String(html`
-      <div class="p-3 border rounded bg-secondary mb-4">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <a href="#/roster/${encodeURIComponent(r.id)}" class="btn btn-sm btn-outline-light" title="Back to the editor"><i class="bi bi-pencil-square me-1"></i>Edit List</a>
+      <div class="px-3 py-2 border rounded bg-secondary mb-3">
+        <div class="d-flex flex-wrap align-items-center column-gap-3 row-gap-2">
+          <a href="#/roster/${encodeURIComponent(r.id)}" class="btn btn-sm btn-outline-light text-nowrap" title="Back to the editor"><i class="bi bi-pencil-square me-1"></i>Edit List</a>
           <div class="flex-grow-1" style="min-width:0">
-            <h4 class="fw-bold mb-0 text-truncate"><i class="bi bi-play-fill text-warning"></i> ${r.name}</h4>
-            <small class="opacity-75">${r.catalogueName || ''}${battleSize ? ` • ${e.displayName(battleSize).replace(/^\d+\.\s*/, '')}` : ''}</small>
+            <div class="fw-bold text-truncate play-title"><i class="bi bi-play-fill text-warning"></i> ${r.name}</div>
+            <small class="opacity-75 d-block text-truncate lh-sm">${r.catalogueName || ''}${battleSize ? ` • ${e.displayName(battleSize).replace(/^\d+\.\s*/, '')}` : ''}</small>
           </div>
-          <div class="text-end">
-            <span class="badge bg-primary fs-6 pts">${fmtPts(pts)}${limit != null ? ` / ${fmtPts(limit)}` : ''} pts</span>
-            ${errors ? html`<div class="small text-warning mt-1"><i class="bi bi-exclamation-triangle"></i> ${errors} list issue${errors === 1 ? '' : 's'}</div>` : ''}
+          <div class="d-flex align-items-center gap-2" style="min-width:0">
+            <span class="small text-truncate"><span class="opacity-75">Detachment${detachments.length > 1 ? 's' : ''}:</span>
+              <span class="fw-semibold text-primary">${detachments.length ? detachments.map((d) => e.displayName(d)).join(', ') : 'None chosen'}</span></span>
+            ${detachments.length ? html`<button class="btn btn-sm btn-outline-info text-nowrap py-0" aria-expanded="${this.showArmyRules}"
+              data-act="${this.actions.add(() => { this.showArmyRules = !this.showArmyRules; this.render(); })}">${this.showArmyRules ? 'Hide' : 'Rules'}</button>` : ''}
           </div>
-        </div>
-        <div class="alert alert-dark d-flex justify-content-between align-items-center py-2 px-3 mt-3 mb-0 gap-2">
-          <div style="min-width:0">
-            <small class="opacity-75 d-block">Detachment${detachments.length > 1 ? 's' : ''}:</small>
-            <span class="fw-semibold text-primary">${detachments.length ? detachments.map((d) => e.displayName(d)).join(', ') : 'None chosen'}</span>
+          <div class="d-flex align-items-center gap-2 ms-auto">
+            ${errors ? html`<span class="small text-warning text-nowrap" title="${errors} list issue${errors === 1 ? '' : 's'}"><i class="bi bi-exclamation-triangle"></i> ${errors}</span>` : ''}
+            <span class="badge bg-primary pts">${fmtPts(pts)}${limit != null ? ` / ${fmtPts(limit)}` : ''} pts</span>
           </div>
-          ${detachments.length ? html`<button class="btn btn-sm btn-outline-info text-nowrap" aria-expanded="${this.showArmyRules}"
-            data-act="${this.actions.add(() => { this.showArmyRules = !this.showArmyRules; this.render(); })}">${this.showArmyRules ? 'Hide' : 'Rules'}</button>` : ''}
         </div>
         ${this.showArmyRules ? html`<div class="mt-3">${detachments.map((d) => {
           const info = e.describe(d);
