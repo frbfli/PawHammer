@@ -198,6 +198,24 @@ export class GameData {
     return out;
   }
 
+  /**
+   * The shared rule a keyword refers to, e.g. "Lethal Hits: Non-Monster/Vehicle" -> "Lethal Hits",
+   * "Sustained Hits 1" -> "Sustained Hits 1" (longest matching name; game system rules first).
+   */
+  ruleForKeyword(keyword) {
+    if (!this._sharedRules) {
+      this._sharedRules = [this.gameSystem, ...this.catalogues].flatMap((d) => arr(d.sharedRules)).filter((r) => r.name);
+    }
+    const k = String(keyword).trim().toLowerCase();
+    let best = null;
+    for (const r of this._sharedRules) {
+      const n = r.name.trim().toLowerCase();
+      if (!k.startsWith(n) || /[a-z]/.test(k.charAt(n.length))) continue;
+      if (!best || n.length > best.name.trim().length) best = r;
+    }
+    return best;
+  }
+
   /** Resolve an infoLink to { kind, node } where kind is 'profile' | 'rule' | 'infoGroup'. */
   resolveInfoLink(link) {
     const node = this.byId.get(link.targetId);

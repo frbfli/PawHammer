@@ -52,19 +52,37 @@ function numericOp(cur, m, times) {
   }
 }
 
+/** Joiners in the data may use non-breaking spaces (e.g. ",&nbsp;"). */
+const joiner = (m) => (m.join != null ? String(m.join).replace(/&nbsp;| /g, ' ') : ' ');
+const isBlank = (text) => !text.trim() || text.trim() === '-';
+
 function textOp(cur, m, times = 1) {
   const value = m.value == null ? '' : String(m.value);
   const text = cur == null ? '' : String(cur);
   switch (m.type) {
     case 'set': return value;
-    case 'append': return text ? text + (m.join != null ? m.join : ' ') + value : value;
-    case 'prepend': return text ? value + (m.join != null ? m.join : ' ') + text : value;
-    case 'replace': return m.arg != null ? text.split(String(m.arg)).join(value) : value;
+    case 'append': case 'prepend': {
+      if (m.skipIfPresent != null && text.includes(String(m.skipIfPresent))) return text;
+      if (isBlank(text)) return value;
+      return m.type === 'append' ? text + joiner(m) + value : value + joiner(m) + text;
+    }
+    // An empty `arg` fills in a blank value (e.g. granting an invulnerable save) and leaves others.
+    case 'replace':
+      if (m.arg == null) return value;
+      if (m.arg === '') return isBlank(text) ? value : text;
+      return text.split(String(m.arg)).join(value);
     case 'increment': case 'decrement': case 'multiply': case 'divide': case 'floor': case 'ceil': {
-      // Characteristics like `6"` or `3+`: modify the leading number, keep the suffix.
-      const match = /^(-?\d+(?:\.\d+)?)(.*)$/.exec(text.trim());
-      if (!match) return text;
-      return String(numericOp(Number(match[1]), m, times)) + match[2];
+      if (m.position == null) {
+        // Characteristics like `6"` or `3+`: modify the leading number, keep the suffix.
+        const match = /^(-?\d+(?:\.\d+)?)(.*)$/.exec(text.trim());
+        if (!match) return text;
+        return String(numericOp(Number(match[1]), m, times)) + match[2];
+      }
+      // `position` picks which number to change (-1: the last, e.g. the "1" in "D6+1").
+      const nums = [...text.matchAll(/\d+(?:\.\d+)?/g)];
+      const hit = nums[m.position < 0 ? nums.length + Number(m.position) : Number(m.position)];
+      if (!hit) return text;
+      return text.slice(0, hit.index) + String(numericOp(Number(hit[0]), m, times)) + text.slice(hit.index + hit[0].length);
     }
     default: return text;
   }
@@ -577,10 +595,92 @@ export class RosterEngine {
     const con = state.constraints.find((c) => c.id === field);
     if (con) { con.value = numericOp(con.value, m, times); return; }
     if (this._isCostType(field)) { state.costs[field] = numericOp(0, m, times); return; }
-    if (state.characteristics) {
-      const ch = state.characteristics.find((c) => c.typeId === field || c.name === field);
-      if (ch) ch.value = textOp(ch.value, m, times);
+    if (state.characteristics) this._applyCharacteristic(state, m, times, self);
+  }
+
+  /** Apply a characteristic modifier, recording what changed and what caused it. */
+  _applyCharacteristic(state, m, times, owner) {
+    const ch = state.characteristics.find((c) => c.typeId === m.field || c.name === m.field);
+    if (!ch) return;
+    const before = ch.value;
+    ch.value = textOp(ch.value, m, times);
+    if (ch.value !== before) ch.changes.push({ before, after: ch.value, ...this._modSource(m, owner) });
+  }
+
+  /**
+   * Where a modifier comes from, for explaining modified stats: the unit carrying it (also when
+   * the modifier sits on its wargear or an enhancement) and the entries its conditions require
+   * (e.g. "Pedro Kantor").
+   */
+  _modSource(m, owner) {
+    const requires = new Set();
+    const visit = (node) => {
+      for (const c of arr(node.conditions)) {
+        // "Has at least one X" conditions; instanceOf only says where the modifier sits.
+        const positive = ((c.type === 'atLeast' || c.type === 'equalTo') && Number(c.value) >= 1) || (c.type === 'greaterThan' && Number(c.value) >= 0);
+        if (positive && c.childName && (c.field || 'selections') === 'selections') requires.add(c.childName);
+      }
+      for (const g of arr(node.conditionGroups)) if (g.type !== 'or') visit(g);
+    };
+    visit(m);
+    return { source: owner && owner.isSelection ? this.displayName(owner.rootEntry) : '', requires: [...requires] };
+  }
+
+  /**
+   * Modifiers that reach into other selections (New Recruit `affects`, e.g. an enhancement
+   * giving its bearer's melee weapons +1 A, or a leader granting its unit an invulnerable save),
+   * indexed by target selection id: [{ m, owner, times, profileType }].
+   */
+  _externalModifiers() {
+    const hit = this._memo.get('external');
+    if (hit) return hit;
+    const index = new Map();
+    this._memo.set('external', index);
+    const collect = (owner, mods, groups) => {
+      for (const m of mods) {
+        if (!m.affects || !this._conditionsPass(m, owner)) continue;
+        const times = this._repeatTimes(m, owner);
+        if (times <= 0) continue;
+        const { targets, profileType } = this._affectsTargets(m, owner);
+        for (const t of targets) {
+          if (!index.has(t.id)) index.set(t.id, []);
+          index.get(t.id).push({ m, owner, times, profileType });
+        }
+      }
+      for (const g of groups) if (this._conditionsPass(g, owner)) collect(owner, arr(g.modifiers), arr(g.modifierGroups));
+    };
+    for (const s of this.walk()) {
+      collect(s, s.def.modifiers, s.def.modifierGroups);
+      // Profiles and rules carried by the entry can also hold `affects` modifiers.
+      for (const info of [...s.def.profiles, ...s.def.rules, ...s.def.infoLinks]) collect(s, arr(info.modifiers), arr(info.modifierGroups));
     }
+    return index;
+  }
+
+  /**
+   * Resolve an `affects` path such as "self.entries.group.recursive.<categoryId>.profiles.Melee Weapons",
+   * starting from the modifier's scope (or its owner):
+   *   entries: + children   recursive: + all descendants   group / associations: + the attached unit
+   *   forces: + the whole army   <id>: keep matching selections   profiles.<Type>: profiles of that type
+   */
+  _affectsTargets(m, owner) {
+    const start = m.scope ? this._scopeTargets(owner, m.scope)[0] : owner;
+    let set = start ? [start] : [];
+    let profileType = null;
+    const tokens = String(m.affects).split('.');
+    const add = (more) => { set = [...new Set([...set, ...more])]; };
+    for (let i = 0; i < tokens.length; i++) {
+      const tk = tokens[i];
+      if (tk === 'self') continue;
+      if (tk === 'profiles') { profileType = tokens.slice(i + 1).join('.') || null; break; }
+      if (tk === 'entries') add(set.flatMap((n) => this._childrenOf(n)));
+      else if (tk === 'recursive') add(set.flatMap((n) => [...this.walk(n)]));
+      else if (tk === 'forces') add(set.flatMap((n) => (n.isRoster ? n.forces : [this._forceOf(n) || this.roster])));
+      else if (tk === 'group') add(set.filter((n) => n.isSelection).flatMap((n) => this._associationGroup(n.rootEntry)));
+      else if (tk === 'associations') add(set.filter((n) => n.isSelection).flatMap((n) => this._associated(n.rootEntry)));
+      else set = set.filter((n) => n.isSelection && this._matchSelection(n, tk));
+    }
+    return { targets: set.filter((n) => n.isSelection && !n.virtual), profileType };
   }
 
   /** Evaluated state of an existing or virtual selection. */
@@ -1198,13 +1298,26 @@ export class RosterEngine {
       constraints: [],
       categories: new Set(),
       errors: [], warnings: [], annotations: [],
-      characteristics: arr(node.characteristics).map((c) => ({ name: c.name, typeId: c.typeId, value: c.$text != null ? String(c.$text) : '' })),
+      characteristics: arr(node.characteristics).map((c) => {
+        const value = c.$text != null ? String(c.$text) : '';
+        return { name: c.name, typeId: c.typeId, value, base: value, changes: [] };
+      }),
     };
     const mods = [...arr(node.modifiers), ...arr(link && link.modifiers)];
     const groups = [...arr(node.modifierGroups), ...arr(link && link.modifierGroups)];
     this._applyModifiers(state, mods, groups, self);
+    if (state.characteristics.length && self.isSelection && !self.virtual) {
+      const typeName = this.profileTypeName(node);
+      for (const x of this._externalModifiers().get(self.id) || []) {
+        if (x.profileType === typeName) this._applyCharacteristic(state, x.m, x.times, x.owner);
+      }
+    }
     this._memo.set(memoKey, state);
     return state;
+  }
+
+  profileTypeName(node) {
+    return node.typeName || (this.data.profileTypes.find((t) => t.id === node.typeId) || {}).name || 'Profile';
   }
 
   /**
@@ -1251,7 +1364,7 @@ export class RosterEngine {
     const addProfile = (node, link, self) => {
       const st = this._evalInfo(node, link, self, self.id + ':' + (link ? link.id : node.id));
       if (st.hidden) return;
-      const typeName = node.typeName || (this.data.profileTypes.find((t) => t.id === node.typeId) || {}).name || 'Profile';
+      const typeName = this.profileTypeName(node);
       const k = typeName + '|' + st.name + '|' + st.characteristics.map((c) => c.value).join('|');
       const seen = pSeen.get(k);
       if (seen) { seen.count += mult; return; }
@@ -1287,11 +1400,38 @@ export class RosterEngine {
       const d = s.def;
       mult = m;
       collectInfo({ profiles: d.profiles, rules: d.rules, infoLinks: d.infoLinks, infoGroups: d.infoGroups }, s);
+      // Abilities granted by other selections (`add-info`, e.g. a leader's rule given to its unit).
+      for (const x of this._externalModifiers().get(s.id) || []) {
+        if (x.m.field !== 'add-info' || x.m.type !== 'add') continue;
+        const node = this.data.get(x.m.value);
+        if (!node) continue;
+        if (node.characteristics) collectInfo({ profiles: [node] }, s);
+        else if (node.description != null) collectInfo({ rules: [node] }, s);
+        else collectInfo(node, s, 1);
+      }
       if (deep) for (const c of s.children) visit(c, m * c.number);
     };
     visit(sel, 1);
-    const st = this.evaluate(sel);
-    const keywords = [...st.categories].map((id) => (this.data.categories.get(id) || {}).name).filter(Boolean);
+    // Weapon keywords added by other units (e.g. a Lieutenant's Lethal Hits) bring their rule
+    // along, so the keyword badge can open it like the weapon's own keywords.
+    const had = (v) => new Set(String(v || '').split(',').map((x) => x.trim()));
+    for (const p of profiles) {
+      for (const c of p.characteristics) {
+        if (!c.changes || !c.changes.length || !/keywords/i.test(c.name)) continue;
+        const before = had(c.base);
+        for (const kw of String(c.value).split(',').map((x) => x.trim()).filter((x) => x && !before.has(x))) {
+          const r = this.data.ruleForKeyword(kw);
+          if (r && !rSeen.has(r.name)) { rSeen.add(r.name); rules.push({ name: r.name, description: r.description || '' }); }
+        }
+      }
+    }
+    const cats = new Set(this.evaluate(sel).categories);
+    for (const x of this._externalModifiers().get(sel.id) || []) {
+      if (x.m.field !== 'category') continue;
+      if (x.m.type === 'add') cats.add(x.m.value);
+      else if (x.m.type === 'remove') cats.delete(x.m.value);
+    }
+    const keywords = [...cats].map((id) => (this.data.categories.get(id) || {}).name).filter(Boolean);
     return { profiles, rules, keywords };
   }
 

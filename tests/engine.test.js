@@ -451,5 +451,38 @@ test('leaders defined by associationLinks can attach (Death Guard)', () => {
   assert.deepStrictEqual(e.leadersOf(marines), [leader]);
 });
 
+test('stat changes from other selections (affects): a leader grants its unit an invulnerable save', () => {
+  const e = newRoster();
+  const force = e.roster.forces[0];
+  const find = (n) => e.optionTree(force).entries.find((o) => o.def.name === n).def;
+  const orikan = e.addSelection(force, find('Orikan the Diviner'));
+  const warriors = e.addSelection(force, find('Necron Warriors'));
+  const invuln = () => e.describe(warriors).profiles.find((p) => p.typeName === 'Unit').characteristics.find((c) => c.name === 'InSv');
+  assert.strictEqual(invuln().value, '');
+  e.attach(orikan, e.associationDefs(orikan)[0].id, warriors);
+  const c = invuln();
+  assert.strictEqual(c.value, '4+');
+  assert.strictEqual(c.base, '');
+  assert.strictEqual(c.changes.length, 1);
+  assert.strictEqual(c.changes[0].source, 'Orikan the Diviner');
+});
+
+test('keywords added by a leader come with their rule (Lieutenant: Lethal Hits)', () => {
+  const names = ['Imperium - Space Marines', 'Imperium - Agents of the Imperium', 'Library - Titans',
+    'Imperium - Imperial Knights - Library', 'Library - Astartes Heresy Legends'];
+  const cats = names.map((n) => load(n + '.json').catalogue);
+  const e = RosterEngine.create(new GameData(gs, [...cats, unaligned], cats[0].id), { name: 'SM' });
+  const force = e.roster.forces[0];
+  const find = (n) => e.optionTree(force).entries.find((o) => o.def.name === n).def;
+  const lt = e.addSelection(force, find('Lieutenant'));
+  const squad = e.addSelection(force, find('Assault Intercessor Squad'));
+  e.attach(lt, e.associationDefs(lt)[0].id, squad);
+  const info = e.describe(squad);
+  const pistol = info.profiles.find((p) => p.name === 'Heavy Bolt Pistol').characteristics.find((c) => c.name === 'Keywords');
+  assert.match(pistol.value, /Lethal Hits/);
+  const rule = info.rules.find((r) => r.name === 'Lethal Hits');
+  assert.ok(rule && rule.description, JSON.stringify(info.rules.map((r) => r.name)));
+});
+
 console.log(failures ? `\n${failures} test(s) failed` : '\nAll tests passed');
 process.exit(failures ? 1 : 0);

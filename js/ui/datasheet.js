@@ -48,8 +48,53 @@ function showKeywordRule({ keyword, rule, kind = 'Weapon ability' }) {
   bootstrap.Modal.getOrCreateInstance(el).show();
 }
 
+// ---- modified characteristics (asterisk -> explanation)
+
+const statChanges = new Map(); // button id -> { profile, c }
+let statSeq = 0;
+
+const splitKw = (v) => String(v || '').split(',').map((k) => k.trim()).filter((k) => k && k !== '-');
+const addedKw = (before, after) => { const b = new Set(splitKw(before)); return splitKw(after).filter((k) => !b.has(k)); };
+const isKwChar = (c) => /keywords/i.test(c.name);
+const isModified = (c) => c && c.changes && c.changes.length && c.value !== c.base;
+
+/** `display` for a characteristic, as a button with an asterisk when abilities or wargear changed it. */
+function modValue(profile, c, display, cls = '') {
+  if (!isModified(c)) return display;
+  if (statChanges.size > 5000) statChanges.clear();
+  const id = 'st' + (++statSeq);
+  statChanges.set(id, { profile, c });
+  return html`<button type="button" class="stat-mod ${cls}" data-stat-mod="${id}" title="${c.name} is modified: show why">${display}<span class="stat-mod-mark" aria-hidden="true">*</span></button>`;
+}
+
+function showStatChange({ profile, c }) {
+  const el = keywordModal();
+  const kw = isKwChar(c);
+  el.querySelector('#keywordModalLabel').textContent = `${profile}: ${c.name}`;
+  el.querySelector('#keywordModalSub').textContent = 'Modified characteristic';
+  const summary = kw
+    ? html`<p>Adds <strong>${addedKw(c.base, c.value).join(', ')}</strong></p>`
+    : html`<p class="fs-5 mb-3"><span class="opacity-75">${c.base || '-'}</span> <i class="bi bi-arrow-right mx-1"></i> <strong>${c.value || '-'}</strong></p>`;
+  // With one change the summary already shows the values; with several, each step shows its own.
+  const steps = c.changes.length > 1;
+  el.querySelector('#keywordModalBody').innerHTML = String(html`${summary}
+    <h6 class="small text-uppercase opacity-75 mb-2">From</h6>
+    <ul class="list-unstyled mb-0">${c.changes.map((x) => html`<li class="mb-2">
+      <strong>${x.source || 'Modifier'}</strong>
+      ${steps ? html`<span class="ms-1">${kw ? `adds ${addedKw(x.before, x.after).join(', ')}` : `${x.before || '-'} → ${x.after || '-'}`}</span>` : ''}
+      ${x.requires.length ? html`<div class="small opacity-75">Requires ${x.requires.join(', ')}</div>` : ''}
+    </li>`)}</ul>`);
+  bootstrap.Modal.getOrCreateInstance(el).show();
+}
+
 if (typeof document !== 'undefined') {
   document.addEventListener('click', (ev) => {
+    const stat = ev.target.closest('[data-stat-mod]');
+    if (stat) {
+      const entry = statChanges.get(stat.dataset.statMod);
+      if (entry) { ev.preventDefault(); showStatChange(entry); }
+      return;
+    }
     const badge = ev.target.closest('[data-kw-rule]');
     if (!badge) return;
     const entry = keywordRules.get(badge.dataset.kwRule);
@@ -116,7 +161,7 @@ function statLine(p) {
   const stats = p.characteristics.filter((c) => !isBaseStat(c));
   // Even grid so every characteristic stays on one row, even on phones.
   return html`<div class="stat-line mb-2" style="grid-template-columns: repeat(${stats.length}, minmax(0, 1fr));">
-    ${stats.map((c) => html`<div class="stat-box"><span class="stat-label">${c.name}</span><span class="stat-value">${c.value || '-'}</span></div>`)}
+    ${stats.map((c) => html`<div class="stat-box"><span class="stat-label">${c.name}</span><span class="stat-value">${modValue(p.name, c, c.value || '-')}</span></div>`)}
   </div>`;
 }
 
@@ -141,8 +186,13 @@ function weaponSections(byType, rules, usedRules, counts) {
     const isKw = (c) => /keywords/i.test(c);
     const cols = list[0].characteristics.map((c) => c.name).filter((c) => !isKw(c));
     const centered = (c) => !/description/i.test(c);
-    const valueOf = (p, c) => (p.characteristics.find((x) => x.name === c) || {}).value || '';
+    const charOf = (p, c) => p.characteristics.find((x) => x.name === c);
+    const valueOf = (p, c) => (charOf(p, c) || {}).value || '';
+    const cell = (p, c) => modValue(p.name, charOf(p, c), richText(valueOf(p, c)));
     const kwOf = (p) => p.characteristics.filter((x) => isKw(x.name)).map((x) => x.value).join(', ').trim();
+    // Keywords added by abilities: an asterisk after the badges explains where they came from.
+    const kwMark = (p) => p.characteristics.filter((x) => isKw(x.name) && isModified(x))
+      .map((x) => modValue(p.name, x, html`<span class="visually-hidden">Keywords changed</span>`, 'stat-mod-kw'));
     sections.push(html`<div class="mb-4">
       <h6 class="fw-bold text-primary mb-2">${type}</h6>
       <!-- Phones: one card per weapon with roomy stat boxes. -->
@@ -153,9 +203,9 @@ function weaponSections(byType, rules, usedRules, counts) {
             <div class="fw-semibold">${p.name}${counts ? qty(p) : ''}</div>
             ${p.owners ? html`<div class="small opacity-75">${p.owners.join(', ')}</div>` : ''}
             <div class="weapon-stats" style="grid-template-columns: repeat(${cols.length}, minmax(0, 1fr));">
-              ${cols.map((c) => html`<div class="stat-box"><span class="stat-label">${c}</span><span class="stat-value">${richText(valueOf(p, c))}</span></div>`)}
+              ${cols.map((c) => html`<div class="stat-box"><span class="stat-label">${c}</span><span class="stat-value">${cell(p, c)}</span></div>`)}
             </div>
-            ${kw && kw !== '-' ? html`<div class="mt-2">${formatKeywords(kw, rules, usedRules)}</div>` : ''}
+            ${kw && kw !== '-' ? html`<div class="mt-2">${formatKeywords(kw, rules, usedRules)}${kwMark(p)}</div>` : ''}
           </div>`;
         })}
       </div>
@@ -168,11 +218,8 @@ function weaponSections(byType, rules, usedRules, counts) {
             const hasKw = kw && kw !== '-';
             const stripe = i % 2 === 0 ? 'alt' : '';
             return html`<tr class="${stripe} ${hasKw ? 'has-kw' : ''}"><td class="fw-semibold">${p.name}${counts ? qty(p) : ''}
-              ${p.owners ? html`<div class="small fw-normal opacity-75">${p.owners.join(', ')}</div>` : ''}</td>${cols.map((c) => {
-              const v = (p.characteristics.find((x) => x.name === c) || {}).value || '';
-              return html`<td class="${centered(c) ? 'text-center' : ''}">${richText(v)}</td>`;
-            })}</tr>
-            ${hasKw ? html`<tr class="${stripe} kw-row"><td colspan="${cols.length + 1}">${formatKeywords(kw, rules, usedRules)}</td></tr>` : ''}`;
+              ${p.owners ? html`<div class="small fw-normal opacity-75">${p.owners.join(', ')}</div>` : ''}</td>${cols.map((c) => html`<td class="${centered(c) ? 'text-center' : ''}">${cell(p, c)}</td>`)}</tr>
+            ${hasKw ? html`<tr class="${stripe} kw-row"><td colspan="${cols.length + 1}">${formatKeywords(kw, rules, usedRules)}${kwMark(p)}</td></tr>` : ''}`;
           })}</tbody>
         </table>
       </div>
