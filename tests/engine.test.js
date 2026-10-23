@@ -410,14 +410,45 @@ test('Space Marines: imported catalogues do not duplicate configuration entries'
   assert.ok(e.validate().some((i) => i.message === 'Judiciar must be attached to a Bodyguard unit.'), JSON.stringify(e.validate()));
   e.removeSelection(judiciar);
   const force = e.roster.forces[0];
-  const tac = e.addSelection(force, e.optionTree(force).entries.find((o) => o.def.name === 'Tactical Squad').def);
-  assert.strictEqual(e.modelCount(tac), 10);
+  // Tactical Squad moved to Legends: the data hides it, so it is flagged when added.
+  const legends = e.addSelection(force, e.optionTree(force).entries.find((o) => o.def.name === 'Tactical Squad').def);
+  assert.ok(e.issuesFor(legends).some((i) => /not available/.test(i.message)));
+  e.removeSelection(legends);
+  const tac = e.addSelection(force, e.optionTree(force).entries.find((o) => o.def.name === 'Intercessor Squad').def);
+  assert.strictEqual(e.modelCount(tac), 5);
   // Mandatory Sergeant counts towards the squad's minimum size (5, not 5 + Sergeant).
   const term = e.addSelection(force, e.optionTree(force).entries.find((o) => o.def.name === 'Terminator Squad').def);
   assert.strictEqual(e.modelCount(term), 5);
   assert.strictEqual(e.issuesFor(term).length, 0, JSON.stringify(e.issuesFor(term)));
   assert.ok(e.points(tac) > 0);
   assert.strictEqual(e.issuesFor(tac).length, 0, JSON.stringify(e.issuesFor(tac)));
+});
+
+test('escalating costs: only later copies of a unit cost more (localConditionGroups)', () => {
+  const names = ['Imperium - Space Marines', 'Imperium - Agents of the Imperium', 'Library - Titans',
+    'Imperium - Imperial Knights - Library', 'Library - Astartes Heresy Legends'];
+  const cats = names.map((n) => load(n + '.json').catalogue);
+  const e = RosterEngine.create(new GameData(gs, [...cats, unaligned], cats[0].id), { name: 'SM' });
+  const force = e.roster.forces[0];
+  const def = e.optionTree(force).entries.find((o) => o.def.name === 'Infernus Squad').def;
+  const squads = [1, 2, 3].map(() => e.addSelection(force, def));
+  assert.deepStrictEqual(squads.map((s) => e.points(s)), [95, 95, 105]);
+  e.removeSelection(squads[0]);
+  assert.deepStrictEqual(squads.slice(1).map((s) => e.points(s)), [95, 95]);
+});
+
+test('leaders defined by associationLinks can attach (Death Guard)', () => {
+  const dg = load('Chaos - Death Guard.json').catalogue;
+  const e = RosterEngine.create(new GameData(gs, [dg, unaligned], dg.id), { name: 'DG' });
+  const force = e.roster.forces[0];
+  const find = (n) => e.optionTree(force).entries.find((o) => o.def.name === n).def;
+  const leader = e.addSelection(force, find('Foul Blightspawn'));
+  const marines = e.addSelection(force, find('Plague Marines'));
+  const [assoc] = e.associationDefs(leader);
+  assert.ok(assoc, 'Foul Blightspawn has a Leader association');
+  assert.deepStrictEqual(e.attachCandidates(leader, assoc), [marines]);
+  e.attach(leader, assoc.id, marines);
+  assert.deepStrictEqual(e.leadersOf(marines), [leader]);
 });
 
 console.log(failures ? `\n${failures} test(s) failed` : '\nAll tests passed');

@@ -19,7 +19,23 @@ const TYPE_SCOPES = {
   upgrade: ['upgrade'],
   'model-or-unit': ['model', 'unit'],
   'unit-self': ['unit'],
+  'model-self': ['model'],
+  'model-or-unit-self': ['model', 'unit'],
 };
+
+/**
+ * Combine a condition group's tests: "and" (default), "or", or New Recruit's "count"
+ * (at least `min` and at most `max` of the tests pass). An empty group passes.
+ */
+function combineTests(g, tests) {
+  if (!tests.length) return true;
+  if (g.type === 'or') return tests.some((t) => t());
+  if (g.type === 'count') {
+    const n = tests.filter((t) => t()).length;
+    return n >= (Number(g.min) || 0) && (g.max == null || n <= Number(g.max));
+  }
+  return tests.every((t) => t());
+}
 
 function numericOp(cur, m, times) {
   const v = Number(m.value);
@@ -222,10 +238,25 @@ export class RosterEngine {
 
   _isCostType(id) { return this.data.costTypes.some((t) => t.id === id); }
 
+  /**
+   * A top-level unit together with the characters attached to it, or the unit a character is
+   * attached to and that unit's other characters (traverseAssociationGroup: the attached unit
+   * counts as one, e.g. "An Attached Unit can only take 1 Enhancement").
+   */
+  _associationGroup(sel) {
+    if (!sel || !sel.isSelection || sel.virtual || !sel.parent || !sel.parent.isForce) return [sel];
+    const host = this.attachmentsOf(sel).map((a) => this.findSelection(a.targetId)).find(Boolean) || sel;
+    return [host, ...this.leadersOf(host)];
+  }
+
   /** Measure `field` (selections / forces / cost type) of `childId` within target. */
   _count(target, spec) {
     if (!target || target.isCatalogue) return 0;
     const field = spec.field || 'selections';
+    if (spec.traverseAssociationGroup && field !== 'associations') {
+      const group = this._associationGroup(target);
+      if (group.length > 1) return group.reduce((n, s) => n + this._count(s, { ...spec, traverseAssociationGroup: false }), 0);
+    }
     const childId = spec.childId || 'any';
     const deep = !!spec.includeChildSelections;
     if (field === 'selections') {
@@ -269,13 +300,51 @@ export class RosterEngine {
   }
 
   _checkGroup(g, self) {
-    const tests = [
+    return combineTests(g, [
       ...arr(g.conditions).map((c) => () => this._checkCondition(c, self)),
       ...arr(g.conditionGroups).map((cg) => () => this._checkGroup(cg, self)),
-    ];
-    if (!tests.length) return true;
-    return g.type === 'or' ? tests.some((t) => t()) : tests.every((t) => t());
+      ...arr(g.localConditionGroups).map((lg) => () => this._checkLocalGroup(lg, self)),
+    ]);
   }
+
+  /**
+   * New Recruit "local" condition group: counts the selections in its scope that pass its
+   * conditions (each tested as `self`). BSData uses it for escalating costs, e.g. "+10 pts if at
+   * least 2 Infernus Squads were added before this one". `before` compares roster order with
+   * the owner of the modifier.
+   */
+  _checkLocalGroup(lg, owner) {
+    const cmp = COMPARE[lg.type];
+    if (!cmp) return false;
+    const conds = arr(lg.conditions);
+    // Cheap ordering checks first, so most candidates are rejected before evaluating categories.
+    const ordered = [...conds.filter((c) => c.type === 'before'), ...conds.filter((c) => c.type !== 'before')];
+    let n = 0;
+    for (const t of this._scopeTargets(owner, lg.scope)) {
+      const pool = lg.includeChildSelections ? [...this.walk(t)] : this._childrenOf(t);
+      for (const c of pool) {
+        if (c === owner) continue;
+        const pass = ordered.every((cond) => (cond.type === 'before' ? this._isBefore(c, owner) : this._checkCondition(cond, c))) &&
+          arr(lg.conditionGroups).every((cg) => this._checkGroup(cg, c));
+        if (pass) n += c.number;
+      }
+    }
+    return cmp(n, Number(lg.value));
+  }
+
+  /** Position of a selection in roster order; entries not in the roster yet would be added last. */
+  _order(sel) {
+    let order = this._memo.get('order');
+    if (!order) {
+      order = new Map();
+      let i = 0;
+      for (const s of this.walk()) order.set(s.id, i++);
+      this._memo.set('order', order);
+    }
+    return order.has(sel.id) ? order.get(sel.id) : Infinity;
+  }
+
+  _isBefore(a, b) { return this._order(a) < this._order(b); }
 
   _conditionsPass(m, self) {
     return arr(m.conditions).every((c) => this._checkCondition(c, self)) &&
@@ -360,18 +429,23 @@ export class RosterEngine {
   // Attachments are stored on the leader selection as [{ assocId, targetId }].
 
   associationDefs(sel) {
-    return [...arr(sel.def.raw.associations), ...arr(sel.def.link && sel.def.link.associations)];
+    const own = [sel.def.raw, sel.def.link].filter(Boolean);
+    // associationLinks point at sharedAssociations (e.g. Death Guard's Foul Blightspawn); the
+    // link's id identifies the attachment so two links to one shared association stay distinct.
+    const linked = own.flatMap((n) => arr(n.associationLinks))
+      .filter((l) => !l.hidden)
+      .map((l) => { const t = this.data.get(l.targetId); return t ? { ...t, id: l.id } : null; })
+      .filter(Boolean);
+    return [...own.flatMap((n) => arr(n.associations)), ...linked];
   }
 
   _assocCheck(c, leader, cand) { return this._checkCondition(c, c.queryFromSelf ? leader : cand); }
 
   _assocGroup(g, leader, cand) {
-    const tests = [
+    return combineTests(g, [
       ...arr(g.conditions).map((c) => () => this._assocCheck(c, leader, cand)),
       ...arr(g.conditionGroups).map((cg) => () => this._assocGroup(cg, leader, cand)),
-    ];
-    if (!tests.length) return true;
-    return g.type === 'or' ? tests.some((t) => t()) : tests.every((t) => t());
+    ]);
   }
 
   canAttach(leader, assoc, cand) {
@@ -1057,7 +1131,11 @@ export class RosterEngine {
     let count;
     if (field === 'selections') {
       if (scope === 'self' && !isCategory) count = self.number;
-      else count = this._countSelections(target, match, isCategory ? true : !!con.includeChildSelections || scope !== 'parent');
+      else {
+        const deep = isCategory ? true : !!con.includeChildSelections || scope !== 'parent';
+        const group = con.traverseAssociationGroup ? this._associationGroup(target) : [target];
+        count = group.reduce((n, t) => n + this._countSelections(t, match, deep), 0);
+      }
     } else if (this._isCostType(field) && isCategory) {
       // e.g. "Faction: Unaligned Forces" max 500 pts: only units with that keyword count.
       count = 0;
@@ -1069,7 +1147,7 @@ export class RosterEngine {
       };
       sum(target);
     } else if (this._isCostType(field) || field === 'associations') {
-      count = this._count(target, { field, childId: con.childId || 'any' });
+      count = this._count(target, { field, childId: con.childId || 'any', traverseAssociationGroup: con.traverseAssociationGroup });
     } else {
       return;
     }

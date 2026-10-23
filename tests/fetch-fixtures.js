@@ -12,6 +12,7 @@ const files = [
   'Imperium - Imperial Knights - Library.json', 'Library - Astartes Heresy Legends.json',
   'Imperium - Ultramarines.json', 'Orks.json',
   'Chaos - Chaos Space Marines.json', 'Chaos - Chaos Knights Library.json', 'Chaos - Chaos Daemons Library.json',
+  'Chaos - Death Guard.json',
 ];
 
 function get(url) {
