@@ -616,11 +616,22 @@ export class Editor {
         : html`<span class="badge bg-info rounded-pill pts" title="${t.name}">${fmtPts(v)} ${t.name.split(/\s+/).map((w) => w[0]).join('').toUpperCase()}</span>`));
   }
 
-  /** Configuration choices (detachments, force dispositions, …) can show their rules inline. */
+  /**
+   * Options that can show their rules inline: configuration choices (detachments, force
+   * dispositions, …), enhancements, and wargear with an ability (e.g. a Relic Shield). Plain
+   * weapons don't: their profiles are already on the datasheet.
+   */
   hasRules(parent, opt) {
+    if (!parent.isSelection) return false;
     const d = opt.def;
-    return parent.isSelection && this.isConfigDef(parent.rootEntry.def) &&
-      !!(d.infoLinks.length || d.profiles.length || d.rules.length || d.infoGroups.length);
+    if (this.isConfigDef(parent.rootEntry.def)) return !!(d.infoLinks.length || d.profiles.length || d.rules.length || d.infoGroups.length);
+    const profiles = [...d.profiles, ...d.infoLinks.filter((l) => l.type === 'profile').map((l) => this.engine.data.get(l.targetId)).filter(Boolean)];
+    const isAbility = (p) => (p.characteristics || []).length === 1;
+    if (profiles.some(isAbility)) return true;
+    const rules = d.rules.length + d.infoLinks.filter((l) => l.type !== 'profile').length + d.infoGroups.length;
+    if (opt.groupPath.some((g) => /enhancement/i.test(g.name))) return profiles.length + rules > 0;
+    // Rules on a weapon are its keywords' rules; only rules-only upgrades show them here.
+    return rules > 0 && !profiles.length;
   }
 
   /** Option name: a plain label, or a toggle that reveals the option's rules. */
@@ -637,12 +648,14 @@ export class Editor {
   rulesPanel(parent, opt) {
     if (!this.hasRules(parent, opt) || !this.openRules.has(parent.id + ':' + opt.def.key)) return '';
     const sel = opt.selections[0] || new VirtualSelection(opt.def, parent, opt.groupPath);
-    const info = this.engine.describe(sel);
+    // Configuration choices include what's inside them; other options show only their own rules.
+    const info = this.engine.describe(sel, { deep: this.isConfigDef(parent.rootEntry.def) });
     return html`<div class="rules-panel small mb-2">
       ${info.rules.map((r) => html`<div class="mb-2"><div class="fw-bold text-primary">${r.name}</div>
         <div class="opacity-75">${r.description ? richText(r.description) : html`<em>No description in data.</em>`}</div></div>`)}
       ${info.profiles.map((p) => html`<div class="mb-2"><div class="fw-bold text-primary">${p.name} <span class="badge bg-dark border fw-normal">${p.typeName}</span></div>
-        <div class="opacity-75">${p.characteristics.length === 1 ? richText(p.characteristics[0].value) : p.characteristics.map((c) => html`<div><strong>${c.name}:</strong> ${richText(c.value)}</div>`)}</div></div>`)}
+        <div class="opacity-75">${p.characteristics.length === 1 ? richText(p.characteristics[0].value)
+          : p.characteristics.filter((c) => c.value && c.value !== '-').map((c, i) => html`${i ? ' · ' : ''}<span class="text-nowrap"><strong>${c.name}</strong> ${richText(c.value)}</span>`)}</div></div>`)}
       ${!info.rules.length && !info.profiles.length ? html`<em class="opacity-75">No rules text in the data.</em>` : ''}
     </div>`;
   }
