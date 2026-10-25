@@ -147,13 +147,38 @@ details.rule > div { font-size: .9rem; padding: .25rem 0 .5rem 1rem; opacity: .8
 /* Darkly's primary blue is too dark for text on its gray panels; lighten it for readability. */
 [data-bs-theme="dark"] .text-primary { color: #7aa6d6 !important; }
 
-/* Light mode (Flatly): soften the dark panels/list items used by the Darkly layout. */
+/*
+ * Light mode (Flatly). The layout is written for Darkly, so its dark-only classes are remapped
+ * here, in the page and in popups (the navbar stays dark and keeps them as they are).
+ */
 [data-bs-theme="light"] .bg-secondary { background-color: #ecf0f1 !important; }
 [data-bs-theme="light"] footer.bg-secondary { background-color: #dfe6e9 !important; }
-[data-bs-theme="light"] #app .bg-dark:not(.cat-toggle) { background-color: #fff !important; }
-[data-bs-theme="light"] #app .text-light { color: var(--bs-body-color) !important; }
-[data-bs-theme="light"] #app .btn-outline-light { --bs-btn-color: var(--bs-body-color); --bs-btn-border-color: var(--bs-border-color); }
-[data-bs-theme="light"] #app .alert-dark { background-color: #fff; }
+[data-bs-theme="light"] :is(#app, .modal) .bg-dark:not(.cat-toggle) { background-color: #fff !important; }
+/* Dark badges (e.g. "Bodyguard", weapon keywords) become white, so their text must turn dark. */
+[data-bs-theme="light"] :is(#app, .modal) .badge.bg-dark { color: var(--bs-body-color); border-color: #b0bec5 !important; }
+[data-bs-theme="light"] :is(#app, .modal) .text-light { color: var(--bs-body-color) !important; }
+/* Flatly's "dark" is a mid gray: too faint on warning badges (Warlord, Below Half-strength). */
+[data-bs-theme="light"] .text-dark { color: #212529 !important; }
+[data-bs-theme="light"] :is(#app, .modal) .btn-outline-light {
+    --bs-btn-color: var(--bs-body-color); --bs-btn-border-color: #b0bec5;
+    --bs-btn-hover-color: #fff; --bs-btn-hover-bg: var(--bs-primary); --bs-btn-hover-border-color: var(--bs-primary);
+    --bs-btn-active-color: #fff; --bs-btn-active-bg: var(--bs-primary); --bs-btn-active-border-color: var(--bs-primary);
+    --bs-btn-disabled-color: var(--bs-body-color); --bs-btn-disabled-border-color: #b0bec5;
+}
+/* On dark headers (unit header, popup headers) light buttons stay light. */
+[data-bs-theme="light"] :is(#app, .modal) :is(.bg-primary, .modal-header) .btn-outline-light {
+    --bs-btn-color: #fff; --bs-btn-border-color: rgba(255, 255, 255, .5);
+    --bs-btn-hover-color: var(--bs-primary); --bs-btn-hover-bg: #fff;
+}
+/* Flatly alerts have white text, so a white "dark" alert needs dark text. */
+[data-bs-theme="light"] :is(#app, .modal) .alert-dark { background-color: #fff; color: var(--bs-body-color); border-color: var(--bs-border-color); }
+/* Weapon tables use table-dark, which is mid gray in Flatly: make them white with dark text. */
+[data-bs-theme="light"] .weapon-table.table-dark {
+    --bs-table-bg: #fff; --bs-table-color: var(--bs-body-color); --bs-table-border-color: var(--bs-border-color);
+    --bs-table-striped-bg: rgba(0, 0, 0, .04); --bs-table-striped-color: var(--bs-body-color);
+    --bs-table-hover-bg: rgba(0, 0, 0, .06); --bs-table-hover-color: var(--bs-body-color);
+    color: var(--bs-body-color); border-color: var(--bs-border-color);
+}
 [data-bs-theme="light"] .unit-list-item.selected { background-color: rgba(44, 62, 80, 0.08); }
 [data-bs-theme="light"] .link-light { color: var(--bs-primary) !important; }
 
