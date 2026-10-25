@@ -52,6 +52,22 @@
 }
 .points-meter { min-width: 9rem; }
 .play-title { font-size: 1.1rem; line-height: 1.3; }
+/* Play Mode game tracker */
+.game-bar .phase-name { flex: 1 1 auto; min-width: 8.5rem; opacity: 1; }
+.cp-value { min-width: 1.6rem; text-align: center; }
+.tracker-name { min-width: 9rem; }
+.pip {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.6rem; height: 1.6rem; border-radius: 50%;
+    border: 2px solid var(--bs-success); font-size: .75rem; font-weight: 700;
+}
+.pip.hurt { border-color: var(--bs-warning); color: var(--bs-warning); }
+.pip.dead { border-color: var(--bs-secondary-color); opacity: .45; }
+.unit-list-item.shock-pending {
+    background-color: rgba(var(--bs-danger-rgb), .22) !important;
+    box-shadow: inset 4px 0 0 var(--bs-danger);
+}
+.unit-list-item.unit-destroyed { opacity: .55; }
 /* Compact top navbar so more of the editor fits on laptop screens. */
 .app-navbar { padding-top: .25rem; padding-bottom: .25rem; }
 .app-navbar .navbar-brand { font-size: 1.1rem; padding-top: .25rem; padding-bottom: .25rem; }

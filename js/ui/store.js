@@ -39,6 +39,9 @@ export const store = {
     delete all[id];
     write(ROSTERS, all);
   },
+  /** Play Mode game tracker state for a roster (see game.js), or null. */
+  getGame(rosterId) { return read('pawhammer:game:' + rosterId, null); },
+  saveGame(rosterId, game) { write('pawhammer:game:' + rosterId, game); },
   settings() {
     return { source: { ...DEFAULT_SOURCE }, theme: 'dark', ysProxy: DEFAULT_YS_PROXY, ...read(SETTINGS, {}) };
   },

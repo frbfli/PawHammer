@@ -9,6 +9,9 @@ import { toBattleScribeXml } from '../js/engine/battlescribe-export.js';
 import { parseGwAppText } from '../js/import/gw-app-text.js';
 import { importList } from '../js/import/importer.js';
 import { lookupUnits } from '../js/ui/unit-lookup-units.js';
+import { newGame, strength, wound, start, nextPhase, prevPhase, resolveTest, pendingTests } from '../js/ui/game.js';
+
+const pickState = (st) => ({ belowHalf: st.belowHalf, destroyed: st.destroyed });
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const load = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
@@ -482,6 +485,52 @@ test('keywords added by a leader come with their rule (Lieutenant: Lethal Hits)'
   assert.match(pistol.value, /Lethal Hits/);
   const rule = info.rules.find((r) => r.name === 'Lethal Hits');
   assert.ok(rule && rule.description, JSON.stringify(info.rules.map((r) => r.name)));
+});
+
+test('game tracker: wounds, Below Half-strength, turns, CP and Battle-shock tests', () => {
+  const g = newGame();
+  const squad = [{ key: 'sgt', name: 'Sergeant', count: 1, w: 2 }, { key: 'm', name: 'Marine', count: 9, w: 2 }];
+  const solo = [{ key: 'cap', name: 'Captain', count: 1, w: 5 }];
+  const army = () => [{ id: 'u1', ...pickState(strength(g, 'u1', squad)) }, { id: 'u2', ...pickState(strength(g, 'u2', solo)) }];
+  start(g, 'theirs', army());
+  assert.deepStrictEqual([g.round, g.turn, g.phase, g.cp], [1, 'theirs', 0, 1]);
+  // Damage fills the wounded model first: 11 wounds on 2W Marines = 5 dead + one on 1W.
+  wound(g, 'u1', squad[1], 11);
+  let st = strength(g, 'u1', squad);
+  assert.deepStrictEqual([st.alive, st.start, st.belowHalf], [5, 10, false]);
+  wound(g, 'u1', squad[1], 1);
+  assert.strictEqual(strength(g, 'u1', squad).belowHalf, true); // 4 of 10 left
+  // Single model: below half when fewer than half its wounds remain.
+  wound(g, 'u2', solo[0], 2);
+  assert.strictEqual(strength(g, 'u2', solo).belowHalf, false);
+  wound(g, 'u2', solo[0], 1);
+  assert.strictEqual(strength(g, 'u2', solo).belowHalf, true);
+  // Through the opponent's turn to ours: our Command phase flags both units for a test.
+  for (let i = 0; i < 5; i++) nextPhase(g, army());
+  assert.deepStrictEqual([g.round, g.turn, g.phase, g.cp], [1, 'mine', 0, 2]);
+  assert.deepStrictEqual(pendingTests(g).sort(), ['u1', 'u2']);
+  resolveTest(g, 'u1', true);
+  resolveTest(g, 'u2', false);
+  assert.deepStrictEqual([g.units.u1.shocked, g.units.u2.shocked, pendingTests(g).length], [false, true, 0]);
+  // The round advances when the first player goes again; Battle-shock carries over.
+  for (let i = 0; i < 5; i++) nextPhase(g, army());
+  assert.deepStrictEqual([g.round, g.turn, g.units.u2.shocked], [2, 'theirs', true]);
+  // Heal both units above half: only the still Battle-shocked one must test again (11th edition).
+  wound(g, 'u1', squad[1], -12);
+  wound(g, 'u2', solo[0], -3);
+  for (let i = 0; i < 5; i++) nextPhase(g, army());
+  assert.deepStrictEqual([g.units.u1.test, g.units.u2.test, g.units.u2.shocked], [false, true, true]);
+  resolveTest(g, 'u2', true);
+  assert.deepStrictEqual([g.units.u2.test, g.units.u2.shocked], [false, false]);
+  prevPhase(g);
+  assert.deepStrictEqual([g.round, g.turn, g.phase], [2, 'theirs', 4]);
+  // The battle ends after the second player's turn in round 5.
+  while (!g.over) nextPhase(g, army());
+  assert.deepStrictEqual([g.round, g.turn, g.phase, g.over], [5, 'mine', 4, true]);
+  nextPhase(g, army());
+  assert.deepStrictEqual([g.round, g.over], [5, true]);
+  prevPhase(g);
+  assert.deepStrictEqual([g.round, g.turn, g.phase, g.over], [5, 'mine', 4, false]);
 });
 
 console.log(failures ? `\n${failures} test(s) failed` : '\nAll tests passed');
