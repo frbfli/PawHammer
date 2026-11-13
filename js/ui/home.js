@@ -55,7 +55,7 @@ export function renderHome(app) {
         <div class="p-4 border rounded bg-secondary h-100">
           <h3 class="fw-bold border-bottom pb-2 mb-3">Get Started</h3>
           <p class="opacity-75">Build and validate Warhammer 40,000 11th edition army lists. Rules, points and options come
-            from the community-maintained <a href="https://github.com/${app.repo.source.owner || 'BSData'}/${app.repo.source.repo || ''}" class="link-light" target="_blank" rel="noopener">BSData</a> repository.</p>
+            from the community-maintained <a href="https://github.com/${app.repo.source.owner || 'wn-mitch'}/${app.repo.source.repo || '40kdc-data'}" class="link-light" target="_blank" rel="noopener">40kdc-data</a> dataset.</p>
           <div class="d-grid gap-2 mb-4">
             <button class="btn btn-success" id="btn-new"><i class="bi bi-plus-lg me-1"></i>New Roster</button>
             <button class="btn btn-outline-light" id="btn-receive"><i class="bi bi-qr-code-scan me-1"></i>Scan QR / Enter Code</button>

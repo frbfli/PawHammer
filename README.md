@@ -1,10 +1,14 @@
 # PawHammer
 
 A Warhammer 40,000 **11th edition** army list builder that runs entirely in the browser.
-Army rules, points, wargear options and restrictions come straight from the community
-[BSData/wh40k-11e](https://github.com/BSData/wh40k-11e) repository, so the builder stays
-current as the data is updated. The UI is built with Bootstrap 5; the rules engine is plain
-JavaScript (ES modules, no build step, no dependencies).
+Unit stats, points, wargear options, leaders, detachments, enhancements and stratagems come
+straight from the community [40kdc-data](https://github.com/wn-mitch/40kdc-data) dataset, so the
+builder stays current as the data is updated. The UI is built with Bootstrap 5; the rules engine is
+plain JavaScript (ES modules, no build step, no dependencies).
+
+PawHammer originally read BSData/wh40k-11e, which has been taken offline. The app now translates
+40kdc-data into the same model its engine uses (see *Data* below); BattleScribe JSON files can
+still be loaded from disk under **Data Source**.
 
 ## Running
 
@@ -16,8 +20,8 @@ Any static file server works; ES modules just need to be served over HTTP, not o
 
 ## Features
 
-- Pick any faction in the data source. Linked library catalogues (Unaligned Forces,
-  Imperial Knights, Titans, Legends, and so on) load automatically.
+- Pick any faction in the data source, including Space Marine chapters (which add their own
+  units, detachments and enhancements to the Adeptus Astartes ones).
 - Add units from a searchable list grouped by battlefield role. Mandatory models and default
   wargear are selected for you.
 - Edit options: unit size, model loadouts, weapon swaps, enhancements, Warlord, and the
@@ -47,7 +51,7 @@ Any static file server works; ES modules just need to be served over HTTP, not o
 - **Tabletop Simulator:** Export → *Get Yellowscribe code* uploads the roster to
   [Yellowscribe](https://yellowscribe.link) and shows the code for the Yellowscribe v2 mod.
 - Data files are cached in IndexedDB and re-downloaded only when the repository changes.
-- A different repo or branch, or a local copy of the JSON files, can be selected under **Data**.
+- A fork or branch of 40kdc-data, or local BattleScribe JSON files, can be selected under **Data Source**.
 - Dark and light themes, and a responsive layout.
 
 ## Yellowscribe setup
@@ -76,13 +80,35 @@ js/
     engine.js     RosterEngine: modifiers, conditions, repeats, constraints, costs,
                   validation, auto-selection, datasheet info, text/JSON export
   data/
-    repository.js GitHub / local sources, file manifest, catalogue-link resolution
-    cache.js      IndexedDB cache
-  ui/             Bootstrap views (home, editor), templating helpers, storage
+    dc-repository.js 40kdc-data source: file listing, downloads, faction list
+    dc-translate.js  40kdc-data -> the engine's (BattleScribe-shaped) game data
+    repository.js    BattleScribe JSON files (local), catalogue-link resolution
+    cache.js         IndexedDB cache
+  ui/             Bootstrap views (home, editor, play), templating helpers, storage
   main.js         App controller and routing
 ```
 
-The engine implements the BattleScribe data model in the JSON form BSData uses for
+### Data
+
+`dc-translate.js` turns a 40kdc-data faction into the structures the engine reads:
+
+- Units and their compositions become unit entries with model entries. Rows of several models get
+  one entry per loadout (the default, each loadout variant and each weapon swap), so a squad can
+  mix them; swaps limited "1 per N models" scale with the unit size.
+- Single models (sergeants, characters, vehicles) get a choice list for each set of weapons
+  their swaps replace.
+- Points rows set the unit's cost by model count, including escalating costs for later copies of
+  a unit and per-item wargear costs.
+- Leader attachments, detachments (with Detachment Points and their rules, enhancements and
+  stratagems), Force Dispositions and the Warlord become the engine's associations and
+  configuration entries.
+- Ability text comes from the data's own notes or the 40kdc describer (MIT), loaded from
+  jsDelivr when available.
+
+Not translated (yet): allied units, wargear budgets shared between several weapons, conditional
+keywords, and a model taking several weapon swaps at once.
+
+The engine implements the BattleScribe data model, in the JSON form BSData used for
 11th edition:
 
 - Entry links, shared entries and groups, including `import` rules for linked catalogues.
@@ -98,18 +124,20 @@ A selection with `number` N stands for N identical copies, and its children are 
 Leader/Support attachments use the data's `associations`, which list eligible units as conditions.
 They are stored on the leader selection and counted wherever the data checks `field: "associations"`.
 
-**Not supported:** modifiers that use the NewRecruit `affects` extension to target other objects.
-
 ## Tests
 
 ```sh
-npm run fixtures     # downloads a few BSData files into tests/fixtures
+npm run fixtures     # downloads 40kdc-data files into tests/fixtures/40kdc
 npm test
 ```
 
-The tests build Necron and Space Marine rosters from the real 11th edition data. They check
-auto-selection, points that depend on unit size, weapon swaps, epic-hero and points-limit
-validation, datasheets, and JSON round-trips.
+`tests/engine.test.js` builds Necron, Space Marine, Sororitas and Chaos rosters from the real
+40kdc-data files through the app's repository and translator. It checks auto-selection, points by
+unit size and copy, weapon swaps, leaders, Warlord, enhancements, Detachment Points, validation,
+datasheets, import/export round trips and old BSData rosters. `tests/bsdata.test.js` covers the
+BattleScribe format and runs only when BSData files are in `tests/fixtures/`.
 
 Warhammer 40,000 is a trademark of Games Workshop. This project is unofficial and not
-endorsed by Games Workshop. Rules data © the BSData contributors.
+endorsed by Games Workshop. Data from [40kdc-data](https://github.com/wn-mitch/40kdc-data)
+© Alpaca Software and the 40kdc community contributors, licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); converted for use in this app.

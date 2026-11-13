@@ -1508,13 +1508,32 @@ export class RosterEngine {
     roster.notes = json.notes || '';
     roster.updatedAt = json.updatedAt || Date.now();
     const engine = new RosterEngine(data, roster);
+    // A roster saved with another data source (e.g. BSData): move it onto this data's faction.
+    const converted = !data.catalogues.some((c) => c.id === roster.catalogueId);
+    if (converted) {
+      roster.catalogueId = data.primaryCatalogue.id;
+      roster.catalogueName = data.primaryCatalogue.name;
+    }
+    const forces = data.forceEntries.filter((f) => !f.hidden);
     for (const jf of arr(json.forces)) {
-      const fe = data.forceEntries.find((f) => f.id === jf.forceEntryId);
+      const fe = data.forceEntries.find((f) => f.id === jf.forceEntryId) || (forces.length === 1 ? forces[0] : null);
       if (!fe) { engine.loadWarnings.push(`Force type ${jf.forceEntryId} no longer exists in the data.`); continue; }
-      const force = new Force(roster, fe, jf.catalogueId || roster.catalogueId);
+      const force = new Force(roster, fe, converted ? roster.catalogueId : jf.catalogueId || roster.catalogueId);
       force.id = jf.id || force.id;
       roster.forces.push(force);
-      engine._restoreChildren(force, arr(jf.selections));
+      if (converted) {
+        // Old loadouts can't be mapped: restore the units, then give each its default loadout.
+        const units = arr(jf.selections).map((js) => ({ ...js, children: [] }));
+        engine._restoreChildren(force, units);
+        for (const s of force.selections) { engine._reset(); engine._autofill(s); }
+        engine._reset();
+        engine._autofill(force);
+      } else {
+        engine._restoreChildren(force, arr(jf.selections));
+      }
+    }
+    if (converted) {
+      engine.loadWarnings.unshift('This roster was made with the old BSData source. Units were matched to the current data; check their wargear, the Battle Size and the Detachment.');
     }
     engine._pruneAttachments();
     engine._reset();
@@ -1600,9 +1619,11 @@ export class RosterEngine {
       for (const enc of list) {
         const [key, number, children, customName] = unpack(enc);
         const hits = options.filter((o) => o.def.key.startsWith(key));
-        const opt = hits.find((o) => o.def.key === key) || hits[0];
+        const exact = hits.find((o) => o.def.key === key);
+        const opt = exact || hits[0];
         if (!opt) { engine.loadWarnings.push(`An entry (${key}) isn't in the current data and was left out.`); made.push(null); continue; }
-        if (new Set(hits.map((o) => o.def.key)).size > 1) engine.loadWarnings.push(`"${opt.def.name}" may not match what was shared (the data has changed).`);
+        // A shortened key matching several entries means the data changed since sharing (an exact match doesn't).
+        if (!exact && new Set(hits.map((o) => o.def.key)).size > 1) engine.loadWarnings.push(`"${opt.def.name}" may not match what was shared (the data has changed).`);
         const sel = new Selection(opt.def, parent, opt.groupPath, number);
         sel.customName = customName;
         engine._childrenOf(parent).push(sel);
@@ -1643,7 +1664,10 @@ export class RosterEngine {
       const pathKey = arr(js.groupPath).join('/');
       const opt = options.find((o) => o.def.key === js.key && o.groupPath.map((g) => g.key).join('/') === pathKey) ||
         options.find((o) => o.def.key === js.key) ||
-        options.find((o) => o.def.id === js.entryId);
+        options.find((o) => o.def.id === js.entryId) ||
+        // Units of rosters saved with BSData, by the BSData ids the current data records.
+        options.find((o) => arr(o.def.raw.aliases).some((a) => a === js.entryId || a === js.key || String(js.key || '').endsWith(a))) ||
+        options.find((o) => js.name && o.def.name === js.name);
       if (!opt) {
         this.loadWarnings.push(`"${js.name || js.key}" could not be found in the current data and was dropped.`);
         continue;

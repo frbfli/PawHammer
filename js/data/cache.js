@@ -4,11 +4,17 @@
 const DB_NAME = 'pawhammer';
 const STORE = 'files';
 const memory = new Map();
+const TIMEOUT = 4000; // a stalled IndexedDB (locked or broken storage) must not hang the app
 let dbPromise = null;
+
+/** Resolve `p`, or `fallback` after TIMEOUT ms. */
+function timed(p, fallback) {
+  return Promise.race([p, new Promise((resolve) => setTimeout(() => resolve(fallback), TIMEOUT))]);
+}
 
 function openDb() {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve) => {
+  dbPromise = timed(new Promise((resolve) => {
     try {
       const req = indexedDB.open(DB_NAME, 1);
       req.onupgradeneeded = () => req.result.createObjectStore(STORE);
@@ -18,14 +24,14 @@ function openDb() {
     } catch {
       resolve(null);
     }
-  });
+  }), null);
   return dbPromise;
 }
 
 function run(mode, fn) {
   return openDb().then((db) => {
     if (!db) return undefined;
-    return new Promise((resolve) => {
+    return timed(new Promise((resolve) => {
       try {
         const tx = db.transaction(STORE, mode);
         const req = fn(tx.objectStore(STORE));
@@ -34,7 +40,7 @@ function run(mode, fn) {
       } catch {
         resolve(undefined);
       }
-    });
+    }), undefined);
   });
 }
 

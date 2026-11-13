@@ -1,11 +1,14 @@
-// BSData repository access: lists the data files of a BSData GitHub repo (default
-// BSData/wh40k-11e), builds a lightweight manifest (id/name/library per file) and
-// downloads + caches game system / catalogue JSON files, resolving catalogue links.
+// BattleScribe-format data access: lists the data files of a BSData-style GitHub repo, builds a
+// lightweight manifest (id/name/library per file) and downloads + caches game system /
+// catalogue JSON files, resolving catalogue links. The app's default source is now 40kdc-data
+// (see dc-repository.js); this is used for BattleScribe JSON files picked from disk.
 
 import { GameData } from '../engine/gamedata.js';
 import { cacheGet, cachePut } from './cache.js';
+import { DC_SOURCE } from './dc-repository.js';
 
-export const DEFAULT_SOURCE = { owner: 'BSData', repo: 'wh40k-11e', branch: 'main' };
+/** The default data source: 40kdc-data (BSData/wh40k-11e was taken offline). */
+export const DEFAULT_SOURCE = { ...DC_SOURCE };
 const LIST_TTL = 60 * 60 * 1000; // 1 hour
 
 const isDataFile = (name) => /\.(json)$/i.test(name) && !/^\./.test(name) && !/package(-lock)?\.json$/i.test(name);

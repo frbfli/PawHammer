@@ -1,6 +1,7 @@
 // PawHammer app controller: routing, data source management and view switching.
 
-import { Repository, GitHubSource, LocalSource, DEFAULT_SOURCE } from './data/repository.js';
+import { Repository, LocalSource, DEFAULT_SOURCE } from './data/repository.js';
+import { DcRepository, DcSource } from './data/dc-repository.js';
 import { cacheClear } from './data/cache.js';
 import { RosterEngine } from './engine/engine.js';
 import { store } from './ui/store.js';
@@ -28,10 +29,20 @@ class App {
   }
 
   resetRepository() {
-    const source = this.localSource || new GitHubSource(store.settings().source);
-    this.repo = new Repository(source);
+    if (this.localSource) {
+      // BattleScribe JSON files picked from disk.
+      this.repo = new Repository(this.localSource);
+    } else {
+      let src = store.settings().source;
+      // BSData/wh40k-11e was taken offline: move saved settings over to the new default.
+      if (!src || (src.owner === 'BSData' && src.repo === 'wh40k-11e')) {
+        src = { ...DEFAULT_SOURCE };
+        store.saveSettings({ source: src });
+      }
+      this.repo = new DcRepository(new DcSource(src));
+    }
     this.gameData.clear();
-    document.getElementById('source-label').textContent = source.label;
+    document.getElementById('source-label').textContent = this.repo.source.label;
   }
 
   loadGameData(catalogueId, status) {
@@ -82,7 +93,7 @@ class App {
     document.getElementById('btn-reset-source').addEventListener('click', () => fill(DEFAULT_SOURCE));
     document.getElementById('btn-clear-cache').addEventListener('click', async () => {
       await cacheClear();
-      Object.keys(localStorage).filter((k) => /^pawhammer:.+@.+:(files|manifest(:v\d+)?)$/.test(k)).forEach((k) => localStorage.removeItem(k));
+      Object.keys(localStorage).filter((k) => /^pawhammer:.+@.+:(files|dc-files|manifest(:v\d+)?)$/.test(k)).forEach((k) => localStorage.removeItem(k));
       this.localSource = null;
       this.resetRepository();
       toast('Cached data cleared');
@@ -260,7 +271,10 @@ class App {
     if (!json) { this.showError(new Error('Roster not found in this browser.')); return; }
     this.showLoading(`Loading ${json.catalogueName || 'army data'}…`);
     try {
-      const data = await this.loadGameData(json.catalogueId, (msg) => this.showLoading(msg));
+      // Rosters saved with BSData name their faction differently: find it in the current data.
+      const factionId = this.repo.findFaction ? await this.repo.findFaction(json.catalogueId, json.catalogueName) : json.catalogueId;
+      if (!factionId) throw new Error(`${json.catalogueName || 'This army'} isn't in the current data source.`);
+      const data = await this.loadGameData(factionId, (msg) => this.showLoading(msg));
       if (location.hash !== hash) return;
       const engine = RosterEngine.fromJSON(data, json);
       const play = m[1] === 'play';
