@@ -189,6 +189,22 @@ await test('enhancements appear once their detachment is chosen and are unique',
   assert.ok(errors(e).some((m) => m.includes(enh.def.name) && /at most 1/.test(m)), errors(e).join(' | '));
 });
 
+await test('detachment upgrades for non-characters: Ironclad Champions on Dreadnoughts only', async () => {
+  const e = await roster('adeptus-astartes');
+  choose(e, config(e, 'Detachment'), 'Ironclad Champions');
+  const offered = (s) => {
+    const g = e.optionTree(s).groups.find((x) => x.def.name === 'Enhancements');
+    return g ? g.entries.filter((o) => !o.hidden).map((o) => o.def.name) : [];
+  };
+  const dread = add(e, 'Redemptor Dreadnought');
+  assert.ok(offered(dread).includes('Artificer Sarcophagus (Upgrade)'), offered(dread).join(', '));
+  assert.deepStrictEqual(offered(add(e, 'Intercessor Squad')), []);
+  const up = option(e, dread, 'Artificer Sarcophagus (Upgrade)');
+  const before = e.points(dread);
+  e.setOptionCount(dread, up.def, up.groupPath, 1);
+  assert.strictEqual(e.points(dread), before + 40);
+});
+
 await test('Force Disposition options come from the chosen detachment', async () => {
   const e = await roster('necrons');
   const fd = config(e, 'Force Disposition');

@@ -541,6 +541,18 @@ class Translator {
 
   // ---------------------------------------------------------------- enhancements
 
+  /**
+   * The legacy flat `keyword_restrictions` list: every keyword is required ("Adeptus Astartes" +
+   * "Dreadnought"), unless no unit in the army has them all, in which case it lists alternatives
+   * (e.g. two datasheet names) and any one will do.
+   */
+  flatKeywordMatch(enh, keywords, ctx) {
+    const list = arr(enh.keyword_restrictions);
+    if (!this.flatMode) this.flatMode = new Map();
+    if (!this.flatMode.has(enh.id)) this.flatMode.set(enh.id, ctx.unitKeywordSets.some((s) => list.every((k) => s.has(k))) ? 'all' : 'any');
+    return this.flatMode.get(enh.id) === 'all' ? list.every((k) => keywords.has(k)) : list.some((k) => keywords.has(k));
+  }
+
   enhancementsFor(u, kws, ctx) {
     if (u.role === 'epic-hero' || kws.includes('Epic Hero')) return null;
     const isChar = kws.includes('Character');
@@ -548,12 +560,17 @@ class Translator {
     const hasAll = (list) => arr(list).every((k) => all.has(k));
     const entries = [];
     for (const enh of ctx.enhancements) {
-      if (enh.upgrade_tag ? false : !isChar) continue;
+      // Bearers: a matching datasheet group OR the keyword rule (any keyword group, else the
+      // flat keyword list); exclusion keywords always apply. Upgrades (upgrade_tag) go on
+      // whichever units these allow; ordinary enhancements only on characters.
       const groups = arr(enh.datasheet_restriction_groups);
-      if (enh.upgrade_tag && !groups.length) continue;
-      if (groups.length && !groups.some((g) => (!g.unit_id || g.unit_id === u.id) && hasAll(g.keywords))) continue;
-      if (!hasAll(enh.keyword_restrictions)) continue;
-      if (arr(enh.keyword_restriction_groups).length && !enh.keyword_restriction_groups.some((g) => hasAll(g.keywords || g))) continue;
+      const dsOk = groups.some((g) => g.unit_id === u.id && hasAll(g.keywords));
+      let kwOk = null; // null: no keyword rule
+      if (arr(enh.keyword_restriction_groups).length) kwOk = enh.keyword_restriction_groups.some((g) => hasAll(g));
+      else if (arr(enh.keyword_restrictions).length) kwOk = this.flatKeywordMatch(enh, all, ctx);
+      const restricted = groups.length > 0 || kwOk !== null;
+      if (enh.upgrade_tag ? !restricted : !isChar) continue;
+      if (restricted && !(dsOk || kwOk)) continue;
       if (arr(enh.exclusion_keywords).some((k) => all.has(k))) continue;
       const rec = this.abilities.get(enh.ability_id);
       const entry = {
@@ -666,6 +683,8 @@ class Translator {
     const comps = new Map(arr(f.compositions).map((c) => [c.unit_id, c]));
     const units = arr(f.units).filter((u) => this.unitAllowed(u));
     const unitIds = new Set(units.map((u) => u.id));
+    // Every unit's keywords, for reading enhancement keyword lists (see flatKeywordMatch).
+    const unitKeywordSets = units.map((u) => new Set([...arr(u.keywords), ...arr(u.faction_keywords)]));
 
     const entries = [];
     for (const u of units) {
@@ -675,7 +694,7 @@ class Translator {
         wargearAbilities.get(ref.wargear).push(ref);
       }
       const wargearCosts = new Map(arr(u.wargear_costs).map((c) => [c.item_id, c.cost]));
-      const ctx = { options, enhancements, detachmentIds, limitCats, wargearAbilities, wargearCosts };
+      const ctx = { options, enhancements, detachmentIds, limitCats, wargearAbilities, wargearCosts, unitKeywordSets };
       entries.push(this.buildUnit(u, comps.get(u.id), ctx));
     }
 
