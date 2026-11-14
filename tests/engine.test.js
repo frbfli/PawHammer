@@ -205,6 +205,21 @@ await test('detachment upgrades for non-characters: Ironclad Champions on Dreadn
   assert.strictEqual(e.points(dread), before + 40);
 });
 
+await test('stratagems: core and detachment ones listed for Play Mode, not in detachment rules', async () => {
+  const data = await load('necrons');
+  const all = data.gameSystem.stratagems;
+  const cr = all.find((s) => s.name === 'Command Re-roll');
+  assert.ok(cr && cr.detachmentId === null && cr.cp === 1, JSON.stringify(cr));
+  const dynasty = all.filter((s) => s.detachmentId === 'awakened-dynasty');
+  assert.ok(dynasty.length > 0);
+  assert.ok(dynasty.every((s) => s.name && s.when && s.cp != null));
+  const e = await roster('necrons');
+  choose(e, config(e, 'Detachment'), 'Awakened Dynasty');
+  const info = e.describe(config(e, 'Detachment').children.find((c) => c.def.name === 'Awakened Dynasty'));
+  assert.ok(!info.profiles.some((p) => p.typeName === 'Stratagem'));
+  assert.ok(info.profiles.some((p) => p.typeName === 'Enhancement'));
+});
+
 await test('Force Disposition options come from the chosen detachment', async () => {
   const e = await roster('necrons');
   const fd = config(e, 'Force Disposition');
@@ -258,6 +273,14 @@ await test('describe() returns profiles, ability text, rules and keywords', asyn
   assert.ok(ability && ability.characteristics[0].value.length > 20, 'ability has rules text');
   assert.ok(info.rules.some((r) => r.name === 'Reanimation Protocols'));
   assert.ok(info.keywords.includes('Battleline') && info.keywords.includes('Faction: Necrons'));
+});
+
+await test('weapon keywords have rules for their badges (text from the data where it has some)', async () => {
+  const e = await roster('necrons');
+  const rules = e.describe(add(e, 'Necron Warriors')).rules.map((r) => r.name);
+  for (const k of ['Lethal Hits', 'Rapid Fire']) assert.ok(rules.includes(k), rules.join(', '));
+  // Its text comes from the 40kdc describer, which loads in the browser (not under Node).
+  assert.ok((await load('necrons')).ruleForKeyword('Twin-linked'));
 });
 
 await test('previewEntry describes an unadded unit without changing the roster', async () => {

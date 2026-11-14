@@ -591,7 +591,7 @@ class Translator {
 
   // ---------------------------------------------------------------- configuration
 
-  configEntries(detachments, enhancements, stratagems) {
+  configEntries(detachments, enhancements) {
     const cfg = [{ id: this.uid('cl'), targetId: CAT_CONFIG, primary: true }];
     const forceMin = () => ({ id: this.uid('con'), type: 'min', value: 1, field: 'selections', scope: 'force', shared: true, includeChildSelections: false });
     const forceMax = () => ({ id: this.uid('con'), type: 'max', value: 1, field: 'selections', scope: 'force', shared: true, includeChildSelections: false });
@@ -608,7 +608,6 @@ class Translator {
     const dpMax = { id: 'con-dp-max', type: 'max', value: 3, field: DP, scope: 'self', shared: true, includeChildSelections: true, message: 'Your detachments cost more Detachment Points than your battle size allows.' };
     const byDet = (list) => { const m = new Map(); for (const x of list) { if (!m.has(x.detachment_id)) m.set(x.detachment_id, []); m.get(x.detachment_id).push(x); } return m; };
     const enhBy = byDet(enhancements);
-    const stratBy = byDet(stratagems);
     const detachment = {
       id: 'cfg-detachment', name: 'Detachment', type: 'upgrade', hidden: false, categoryLinks: cfg, constraints: [forceMin(), forceMax(), dpMax],
       modifiers: BATTLE_SIZES.filter((b) => b.dp !== 3).map((b) => ({ field: dpMax.id, type: 'set', value: b.dp, conditions: [{ type: 'atLeast', value: 1, field: 'selections', scope: 'roster', childId: b.id, includeChildSelections: true, shared: true }] })),
@@ -622,10 +621,8 @@ class Translator {
             categoryLinks: arr(d.force_dispositions).map((fd) => ({ id: this.uid('cl'), targetId: 'disp:' + fd, primary: false })),
             constraints: [this.cons('max', 1)],
             rules: rules.map((id) => { const rec = this.abilities.get(id); return { id: `${d.id}#r:${id}`, name: (rec && rec.name) || dekebab(id), description: this.abilityText(rec) }; }),
-            profiles: [
-              ...arr(enhBy.get(d.id)).map((x) => this.abilityProfile(`${d.id}#e:${x.id}`, `${x.name} (${x.cost || 0} pts)`, this.abilityText(this.abilities.get(x.ability_id)), 'Enhancement', T_ENH)),
-              ...arr(stratBy.get(d.id)).map((s) => this.stratagemProfile(`${d.id}#s:${s.id}`, s)),
-            ],
+            // Its enhancements; its stratagems are listed in Play Mode's Stratagems section.
+            profiles: arr(enhBy.get(d.id)).map((x) => this.abilityProfile(`${d.id}#e:${x.id}`, `${x.name} (${x.cost || 0} pts)`, this.abilityText(this.abilities.get(x.ability_id)), 'Enhancement', T_ENH)),
           };
         }),
       }],
@@ -646,12 +643,23 @@ class Translator {
     return [battleSize, detachment, disposition];
   }
 
-  stratagemProfile(id, s) {
-    const when = [arr(s.phases).map(dekebab).join('/'), s.player_turn ? dekebab(s.player_turn) : ''].filter(Boolean).join(', ');
-    const text = this.abilityText(this.abilities.get(s.ability_id));
+  /**
+   * A stratagem for Play Mode: { id, name, cp, type, when, text, detachmentId } (detachmentId
+   * null for core stratagems). The data's names are upper-case ("COMMAND RE-ROLL").
+   */
+  stratagemInfo(s) {
+    const small = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'or', 'the', 'to', 'with']);
+    const titled = String(s.name).toLowerCase().split(' ')
+      .map((w, i) => (i > 0 && small.has(w) ? w : w.replace(/^(\P{L}*)(\p{L})/u, (m, a, b) => a + b.toUpperCase())))
+      .join(' ');
+    const phases = arr(s.phases);
+    const phase = phases.length >= 5 ? 'Any phase' : phases.length ? `${phases.map(dekebab).join(' or ')} phase` : '';
+    const turn = { 'your-turn': 'your turn', 'opponent-turn': "your opponent's turn", either: 'either player\'s turn' }[s.player_turn] || '';
     return {
-      id, name: `${dekebab(String(s.name).toLowerCase())} (${s.cp_cost}CP)`, hidden: false, typeId: T_STRAT, typeName: 'Stratagem',
-      characteristics: [{ name: 'Description', typeId: T_STRAT + ':desc', $text: [when ? `${when}.` : '', text].filter(Boolean).join(' ') }],
+      id: s.id, name: titled, cp: s.cp_cost, type: s.type ? dekebab(s.type) : '',
+      when: [phase, turn].filter(Boolean).join(', '),
+      text: this.abilityText(this.abilities.get(s.ability_id)),
+      detachmentId: s.detachment_id || null,
     };
   }
 
@@ -739,7 +747,16 @@ class Translator {
         { id: T_ABILITY, name: 'Abilities' }, { id: T_STRAT, name: 'Stratagem' }, { id: T_ENH, name: 'Enhancement' },
       ],
       forceEntries: [forceEntry],
-      selectionEntries: this.configEntries(detachments, enhancements, stratagems),
+      selectionEntries: this.configEntries(detachments, enhancements),
+      // Stratagems for Play Mode (not part of the engine's data model): the core ones every
+      // army has, then each detachment's (shown when that detachment is in the list).
+      stratagems: [...arr(this.core.stratagems).filter(matchedPlay), ...stratagems].map((s) => this.stratagemInfo(s)),
+      // Weapon keyword rules, so keyword badges open them, with the data's explanation of the
+      // keyword's effect (most keywords don't have one in the data yet).
+      sharedRules: arr(this.core.weaponKeywords).map((k) => ({
+        id: 'wk:' + k.id, name: k.name, hidden: false,
+        description: k.effect ? this.abilityText({ name: k.name, effect: k.effect }) : '',
+      })),
       categoryEntries: [],
     };
     const catalogue = {

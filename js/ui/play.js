@@ -20,6 +20,7 @@ export class PlayView {
     this.game = { ...newGame(), ...(store.getGame(engine.roster.id) || {}) };
     this.collapsed = !!store.settings().playHeaderCollapsed;
     this.tracking = store.settings().playTracking !== false;
+    this.showStratagems = !!store.settings().playStratagemsOpen;
     this.unbindActions = this.actions.bind(this.root);
     this.render();
   }
@@ -150,6 +151,39 @@ export class PlayView {
     this.collapsed = v;
     store.saveSettings({ playHeaderCollapsed: v });
     this.render();
+  }
+
+  /**
+   * Collapsible list of the stratagems this army can use: those of its detachments, then the
+   * core stratagems every army has. Data sources without stratagems show nothing.
+   */
+  stratagemsHtml(detachments) {
+    const all = this.engine.data.gameSystem.stratagems;
+    if (!all || !all.length) return '';
+    const groups = [
+      ...detachments.map((d) => ({ name: this.engine.displayName(d), list: all.filter((s) => s.detachmentId === d.def.id) })),
+      { name: 'Core', list: all.filter((s) => !s.detachmentId) },
+    ].filter((g) => g.list.length);
+    const count = groups.reduce((n, g) => n + g.list.length, 0);
+    const open = this.showStratagems;
+    return html`<div class="border rounded bg-secondary mb-3">
+      <button type="button" class="btn w-100 text-start d-flex align-items-center gap-2 px-3 py-2 stratagems-toggle" aria-expanded="${open}"
+        data-act="${this.actions.add(() => { this.showStratagems = !open; store.saveSettings({ playStratagemsOpen: !open }); this.render(); })}">
+        <i class="bi bi-lightning-charge-fill text-warning"></i><span class="fw-bold">Stratagems</span>
+        <span class="badge bg-primary rounded-pill">${count}</span>
+        <i class="bi ${open ? 'bi-chevron-up' : 'bi-chevron-down'} ms-auto"></i>
+      </button>
+      ${open ? html`<div class="px-3 pb-3">${groups.map((g) => html`
+        <div class="list-cat-heading px-0"><span>${g.name}</span></div>
+        <div class="row g-2">${g.list.map((s) => html`<div class="col-md-6 col-xxl-4"><div class="stratagem h-100 p-2 rounded border">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <span class="fw-bold">${s.name}</span><span class="badge bg-warning text-dark text-nowrap">${s.cp} CP</span>
+          </div>
+          <div class="small opacity-75 mb-1">${[s.type, s.when].filter(Boolean).join(' · ')}</div>
+          <div class="small">${s.text ? richText(s.text) : html`<em class="opacity-75">No rules text in the data.</em>`}</div>
+        </div></div>`)}</div>`)}
+      </div>` : ''}
+    </div>`;
   }
 
   /** Game tracking on/off; the game in progress is kept either way. */
@@ -322,6 +356,7 @@ export class PlayView {
               <div class="small opacity-75">${richText(p.characteristics.map((c) => c.value).join(' '))}</div></div>`)}`;
         })}</div>` : ''}
       </div>`}
+      ${this.stratagemsHtml(detachments)}
 
       <div class="row g-4">
         <div class="col-lg-5">

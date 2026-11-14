@@ -187,9 +187,9 @@ export class DcRepository {
       const got = await Promise.all(FACTION_FILES.map((name) => read(`core/${dir}/${name}.json`)));
       return Object.fromEntries(FACTION_FILES.map((name, i) => [name, got[i] || []]));
     };
-    const [own, inherited, forceDispositions, weaponKeywords, unitKeywords, ...abilityFiles] = await Promise.all([
+    const [own, inherited, forceDispositions, weaponKeywords, unitKeywords, coreStratagems, ...abilityFiles] = await Promise.all([
       load(faction.dir), parent ? load(parent.dir) : null,
-      read('core/force-dispositions.json'), read('core/weapon-keywords.json'), read('core/unit-keywords.json'),
+      read('core/force-dispositions.json'), read('core/weapon-keywords.json'), read('core/unit-keywords.json'), read('core/stratagems.json'),
       ...dirs.map((d) => read(`enrichment/${d}/abilities.json`)), read('enrichment/_core/abilities.json'),
     ]);
     // A chapter's files repeat many of its parent's records (e.g. the generic Space Marine
@@ -214,7 +214,7 @@ export class DcRepository {
         wargear: merged('wargear'), weapons: merged('weapons'), leaders: merged('leader-attachments'),
         detachments: merged('detachments'), enhancements: merged('enhancements'), stratagems: merged('stratagems'),
       },
-      core: { forceDispositions: forceDispositions || [], weaponKeywords: weaponKeywords || [], unitKeywords: unitKeywords || [] },
+      core: { forceDispositions: forceDispositions || [], weaponKeywords: weaponKeywords || [], unitKeywords: unitKeywords || [], stratagems: coreStratagems || [] },
       abilities,
       describe: await describe,
     });

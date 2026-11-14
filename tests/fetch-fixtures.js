@@ -10,7 +10,7 @@ const repo = 'wn-mitch/40kdc-data';
 const branch = 'main';
 // Factions the tests build armies from (sub-factions need their parent, e.g. ultramarines).
 const factions = ['necrons', 'adeptus-astartes', 'ultramarines', 'blood-angels', 'adepta-sororitas', 'chaos-space-marines'];
-const shared = ['core/force-dispositions.json', 'core/weapon-keywords.json', 'core/unit-keywords.json', 'enrichment/_core/abilities.json'];
+const shared = ['core/force-dispositions.json', 'core/weapon-keywords.json', 'core/unit-keywords.json', 'core/stratagems.json', 'enrichment/_core/abilities.json'];
 
 function get(url, headers = {}) {
   return new Promise((resolve, reject) => {

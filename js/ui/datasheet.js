@@ -44,7 +44,7 @@ function showKeywordRule({ keyword, rule, kind = 'Weapon ability' }) {
   const el = keywordModal();
   el.querySelector('#keywordModalLabel').textContent = keyword;
   el.querySelector('#keywordModalSub').textContent = rule.name.toLowerCase() === keyword.toLowerCase() ? kind : `${kind}: ${rule.name}`;
-  el.querySelector('#keywordModalBody').innerHTML = String(rule.description ? html`<p class="mb-0">${richText(rule.description)}</p>` : html`<p class="mb-0 opacity-75">No rules text in the data.</p>`);
+  el.querySelector('#keywordModalBody').innerHTML = String(rule.description ? html`<p class="mb-0">${richText(rule.description)}</p>` : html`<p class="mb-0 opacity-75">No rules text for this keyword yet.</p>`);
   bootstrap.Modal.getOrCreateInstance(el).show();
 }
 
@@ -103,6 +103,12 @@ if (typeof document !== 'undefined') {
 }
 
 /**
+ * Whether weapon keyword badges open their rule. Off for now: 40kdc-data has rules text for
+ * very few weapon keywords yet. Set to true to make them clickable again.
+ */
+const WEAPON_KEYWORD_POPUPS = false;
+
+/**
  * Weapon keyword badges. Keywords with a matching rule become buttons that open the rule;
  * matched rules are added to `used` so the datasheet can leave them out of its Rules list.
  */
@@ -110,8 +116,8 @@ export function formatKeywords(text, rules = [], used = new Set()) {
   if (!text || text === '-') return html`<span class="opacity-50">-</span>`;
   return text.split(',').map((raw) => raw.trim()).filter(Boolean).map((kw) => {
     const rule = ruleForKeyword(kw, rules);
-    if (!rule) return html`<span class="badge bg-dark border text-info me-1" style="font-size:0.75rem;">${kw}</span>`;
-    used.add(rule);
+    if (rule) used.add(rule);
+    if (!rule || !WEAPON_KEYWORD_POPUPS) return html`<span class="badge bg-dark border text-info me-1" style="font-size:0.75rem;">${kw}</span>`;
     if (keywordRules.size > 5000) keywordRules.clear();
     const id = 'kw' + (++keywordSeq);
     keywordRules.set(id, { keyword: kw, rule });

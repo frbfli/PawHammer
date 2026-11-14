@@ -1412,14 +1412,12 @@ export class RosterEngine {
       if (deep) for (const c of s.children) visit(c, m * c.number);
     };
     visit(sel, 1);
-    // Weapon keywords added by other units (e.g. a Lieutenant's Lethal Hits) bring their rule
-    // along, so the keyword badge can open it like the weapon's own keywords.
-    const had = (v) => new Set(String(v || '').split(',').map((x) => x.trim()));
+    // Weapon keywords open their rule from the data's shared rules: keywords the weapon doesn't
+    // link a rule for itself, and ones added by other units (e.g. a Lieutenant's Lethal Hits).
     for (const p of profiles) {
       for (const c of p.characteristics) {
-        if (!c.changes || !c.changes.length || !/keywords/i.test(c.name)) continue;
-        const before = had(c.base);
-        for (const kw of String(c.value).split(',').map((x) => x.trim()).filter((x) => x && !before.has(x))) {
+        if (!/keywords/i.test(c.name)) continue;
+        for (const kw of String(c.value).split(',').map((x) => x.trim()).filter((x) => x && x !== '-')) {
           const r = this.data.ruleForKeyword(kw);
           if (r && !rSeen.has(r.name)) { rSeen.add(r.name); rules.push({ name: r.name, description: r.description || '' }); }
         }
